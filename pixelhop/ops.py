@@ -8,21 +8,17 @@ from functools import partial
 @partial(jax.jit, static_argnames=["pool", "win", "stride", "pad"])
 def shrink(X, pool, win, stride, pad):
     X = rearrange(X, "b h w c -> b c h w")
+
     # ---- max pooling----
     X = flax.linen.max_pool(X, (pool, pool), strides=(pool, pool))
 
     # ---- neighborhood construction
     X = jnp.pad(X, ((0, 0), (0, 0), (pad, pad), (pad, pad)), mode="reflect")
-
     X = jax.lax.conv_general_dilated_patches(
         lhs=X, filter_shape=(win, win), window_strides=(stride, stride), padding="VALID"
     )
+
     X = rearrange(X, "b (c p) h w -> b h w p c", p=win**2)
-    return X
-
-
-# Example callback function for how to concat features from different hops
-def concat(X, concat_args):
     return X
 
 

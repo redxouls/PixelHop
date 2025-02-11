@@ -4,22 +4,30 @@ from pixelhop.Layers import SaabLayer, ShrinkLayer
 class PixelHop:
     def __init__(self):
         self.layers = [
-            ShrinkLayer(pool=1, win=3, stride=1, pad=1),
             SaabLayer(thresholds=[0.002, 0.0001], channel_wise=False, apply_bias=False),
-            ShrinkLayer(pool=1, win=3, stride=1, pad=1),
             SaabLayer(thresholds=[0.002, 0.0001], channel_wise=True, apply_bias=False),
+        ]
+        self.shrink_layers = [
+            ShrinkLayer(pool=1, win=3, stride=1, pad=1),
+            ShrinkLayer(pool=1, win=3, stride=1, pad=1),
         ]
 
     def fit(self, X):
-        # print(f"Input shape: {X.shape}")
-        for layer in self.layers:
-            X = layer.fit(X)
-            # print(layer)
-            # print(f"Output Dimension: {X.shape}\n")
+        print(f"Input shape: {X.shape}")
+        energy_previous = None
+        bias_previous = None
+        for layer, shrink_layer in zip(self.layers, self.shrink_layers):
+            X = shrink_layer.transform(X)
+            X, energy_previous = layer.fit_transform(
+                X, energy_previous=None, bias_previous=None
+            )
+            print(layer)
+            print(f"Output Dimension: {X.shape}\n")
 
     def transform(self, X):
         # print(f"Input shape: {X.shape}")
-        for layer in self.layers:
+        for layer, shrink_layer in zip(self.layers, self.shrink_layers):
+            X = shrink_layer.transform(X)
             X = layer.transform(X)
             # print(layer)
             # print(f"Output Dimension: {X.shape}\n")

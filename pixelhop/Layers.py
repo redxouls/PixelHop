@@ -19,16 +19,15 @@ class SaabLayer(Saab):
             X = rearrange(X, "n h w p c -> 1 (n h w) (c p)")
         return X
 
-    def fit(self, X, energy_pre=None, bias_pre=None):
-        _, self.H, self.W, _, _ = X.shape
+    def fit(self, X, energy_previous=None, bias_previous=None):
+        _, self.H, self.W, _, self.C = X.shape
         X_resized = self.resize_input(X)
         super().fit(
             X_resized,
-            energy_pre=energy_pre,
+            energy_previous=energy_previous,
+            bias_previous=bias_previous,
             threshold=self.thresholds[0],
-            bias_pre=bias_pre,
         )
-        return self.transform(X)
 
     def transform(self, X):
         N = X.shape[0]
@@ -36,6 +35,11 @@ class SaabLayer(Saab):
         X = super().transform(X)
         X = rearrange(X, "(n h w) c  ->  n h w c", n=N, h=self.H, w=self.W)
         return X
+
+    def fit_transform(self, X, energy_previous=None, bias_previous=None):
+        self.fit(X, energy_previous=energy_previous, bias_previous=bias_previous)
+        X = self.transform(X)
+        return X, self.energy
 
     def __str__(self):
         return f"SaabLayer(thresholds={self.thresholds}, channel_wise={self.channel_wise}, num_kernels={self.num_kernels}, apply_bias={self.apply_bias})"
