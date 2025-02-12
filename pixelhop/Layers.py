@@ -1,4 +1,5 @@
-from einops import rearrange
+import jax.numpy as jnp
+from einops import rearrange, repeat
 
 from pixelhop.Saab import Saab
 from pixelhop.ops import shrink
@@ -12,18 +13,27 @@ class SaabLayer(Saab):
         self.thresholds = thresholds
         self.channel_wise = channel_wise
 
+    def resize_energy(self, energy_previous):
+        if energy_previous is None:
+            energy_previous = jnp.ones(self.C)
+
+        if self.channel_wise:
+            return repeat(energy_previous, "c -> c p", p=self.P)
+        else:
+            return repeat(energy_previous, "c -> 1 (c p)", p=self.P)
+
     def resize_input(self, X):
         if self.channel_wise:
-            X = rearrange(X, "n h w p c -> c (n h w) p")
+            return rearrange(X, "n h w p c -> c (n h w) p")
         else:
-            X = rearrange(X, "n h w p c -> 1 (n h w) (c p)")
-        return X
+            return rearrange(X, "n h w p c -> 1 (n h w) (c p)")
 
     def fit(self, X, energy_previous=None, bias_previous=None):
-        _, self.H, self.W, _, self.C = X.shape
-        X_resized = self.resize_input(X)
+        _, self.H, self.W, self.P, self.C = X.shape
+        X = self.resize_input(X)
+        energy_previous = self.resize_energy(energy_previous)
         super().fit(
-            X_resized,
+            X,
             energy_previous=energy_previous,
             bias_previous=bias_previous,
             threshold=self.thresholds[0],
@@ -41,9 +51,6 @@ class SaabLayer(Saab):
         X = self.transform(X)
         return X, self.energy
 
-    def __str__(self):
-        return f"SaabLayer(thresholds={self.thresholds}, channel_wise={self.channel_wise}, num_kernels={self.num_kernels}, apply_bias={self.apply_bias})"
-
 
 class ShrinkLayer:
     def __init__(self, pool, win, stride, pad):
@@ -57,9 +64,6 @@ class ShrinkLayer:
 
     def transform(self, X):
         return shrink(X, self.pool, self.win, self.stride, self.pad)
-
-    def __str__(self):
-        return f"ShrinkLayer(pool={self.pool}, win={self.win}, stride={self.stride}, pad={self.pad})"
 
 
 if __name__ == "__main__":

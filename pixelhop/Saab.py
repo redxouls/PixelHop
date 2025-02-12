@@ -65,12 +65,9 @@ class Saab:
         self.mean = []  # feature mean of AC
         self.energy = []  # kernel energy list
 
-    def fit(self, X, energy_previous=None, bias_previous=None, threshold=0):
+    def fit(self, X, energy_previous, bias_previous=None, threshold=0):
         assert len(X.shape) == 3, "Input must be a 3D array!"
         X = X.astype(jnp.float32)
-
-        if energy_previous is None:
-            energy_previous = jnp.ones(X.shape[-1])
 
         if not self.apply_bias:
             self.bias_previous = 0
@@ -78,10 +75,19 @@ class Saab:
             self.bias_previous = bias_previous
 
         fit_batch = vmap(
-            lambda X: fit(X, self.bias_previous, energy_previous, threshold)
+            lambda X, energy_previous: fit(
+                X, self.bias_previous, energy_previous, threshold
+            )
         )
         self.mean, self.bias_current, self.kernels, self.energy, self.cutoff_index = (
-            fit_batch(X)
+            fit_batch(X, energy_previous)
+        )
+        self.energy = jnp.concat(
+            [
+                jax.lax.dynamic_slice(self.energy[i], (0,), (self.cutoff_index[i],))
+                for i in range(len(self.cutoff_index))
+            ],
+            axis=-1,
         )
 
     def transform(self, X):

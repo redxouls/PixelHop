@@ -13,16 +13,15 @@ class PixelHop:
         ]
 
     def fit(self, X):
-        print(f"Input shape: {X.shape}")
+        # print(f"Input shape: {X.shape}")
         energy_previous = None
-        bias_previous = None
         for layer, shrink_layer in zip(self.layers, self.shrink_layers):
             X = shrink_layer.transform(X)
             X, energy_previous = layer.fit_transform(
                 X, energy_previous=None, bias_previous=None
             )
-            print(layer)
-            print(f"Output Dimension: {X.shape}\n")
+            # print(layer)
+            # print(f"Output Dimension: {X.shape}\n")
 
     def transform(self, X):
         # print(f"Input shape: {X.shape}")
@@ -32,9 +31,6 @@ class PixelHop:
             # print(layer)
             # print(f"Output Dimension: {X.shape}\n")
         return X
-
-    def __str__(self):
-        return f"{self.__class__!s}\n{self.layers!r}"
 
 
 if __name__ == "__main__":
@@ -50,6 +46,6 @@ if __name__ == "__main__":
     pixelhop = PixelHop()
     pixelhop.fit(np.random.randn(5000, 16, 16, 3))
     Xt = pixelhop.transform(np.random.randn(1000, 16, 16, 3))
-    # print(Xt)
+    print(Xt.shape)
     print(time.time() - start)
     print("done")
