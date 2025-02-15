@@ -27,16 +27,11 @@ class SaabLayer(Saab):
         else:
             return rearrange(X, "n h w p c -> 1 (n h w) (c p)")
 
-    def fit(self, X, energy_previous=None, bias_previous=None):
+    def fit(self, X, energy_previous=None):
         _, self.H, self.W, self.P, self.C = X.shape
         X = self.resize_input(X)
         energy_previous = self.resize_energy(energy_previous)
-        super().fit(
-            X,
-            energy_previous=energy_previous,
-            bias_previous=bias_previous,
-            threshold=self.threshold,
-        )
+        super().fit(X, energy_previous=energy_previous, threshold=self.threshold)
 
     def transform(self, X):
         N = X.shape[0]
@@ -45,8 +40,8 @@ class SaabLayer(Saab):
         X = rearrange(X, "(n h w) c  ->  n h w c", n=N, h=self.H, w=self.W)
         return X
 
-    def fit_transform(self, X, energy_previous=None, bias_previous=None):
-        self.fit(X, energy_previous=energy_previous, bias_previous=bias_previous)
+    def fit_transform(self, X, energy_previous=None):
+        self.fit(X, energy_previous=energy_previous)
         X = self.transform(X)
         return X, self.energy
 

@@ -21,15 +21,13 @@ def locate_cutoff(energy, threshold):
 
 
 @jit
-def fit(X, bias_previous, energy_previous, threshold):
-    X = X + bias_previous
-
+def fit(X, energy_previous, threshold):
     # Remove dc
     dc = jnp.mean(X, axis=1, keepdims=True)
     X = X - dc
 
     # Calculate bias at the current Hop
-    bias_current = jnp.max(jnp.linalg.norm(X, axis=1))
+    bias = jnp.max(jnp.linalg.norm(X, axis=1))
     mean = jnp.mean(X, axis=0, keepdims=True)
     X = X - mean
 
@@ -49,14 +47,14 @@ def fit(X, bias_previous, energy_previous, threshold):
 
     # Find cutoff index
     cutoff_index = locate_cutoff(energy, threshold)
-    return mean, bias_current, kernels, energy, cutoff_index
+    return mean, bias, kernels, energy, cutoff_index
 
 
 @jit
-def transform(X, bias_previous, mean, kernel):
-    X = X + bias_previous
+def transform(X, mean, kernel, bias):
     X = X - mean
     X = X @ kernel
+    X = X + bias
     return X
 
 
@@ -64,27 +62,17 @@ class Saab:
     def __init__(self, num_kernels=-1, apply_bias=False):
         self.num_kernels = num_kernels
         self.apply_bias = apply_bias
-        self.bias_previous = 0
-        self.bias_current = []  # bias for the current Hop
+        self.bias = []  # bias for the current Hop
         self.kernels = []
         self.mean = []  # feature mean of AC
         self.energy = []  # kernel energy list
 
-    def fit(self, X, energy_previous, bias_previous=None, threshold=0):
+    def fit(self, X, energy_previous, threshold=0):
         assert len(X.shape) == 3, "Input must be a 3D array!"
 
-        if not self.apply_bias:
-            self.bias_previous = 0
-        else:
-            self.bias_previous = bias_previous
-
-        fit_batch = vmap(
-            lambda X, energy_previous: fit(
-                X, self.bias_previous, energy_previous, threshold
-            )
-        )
-        self.mean, self.bias_current, self.kernels, self.energy, self.cutoff_index = (
-            fit_batch(X, energy_previous)
+        fit_batch = vmap(lambda X, energy_previous: fit(X, energy_previous, threshold))
+        self.mean, self.bias, self.kernels, self.energy, self.cutoff_index = fit_batch(
+            X, energy_previous
         )
         self.energy = jnp.concat(
             [
@@ -102,11 +90,16 @@ class Saab:
             for i in range(len(self.cutoff_index))
         ]
 
+        if not self.apply_bias:
+            self.bias = jnp.zeros_like(self.bias)
+
     def transform(self, X):
         X = jnp.concat(
             [
-                transform(X_channel, self.bias_previous, mean, kernel)
-                for X_channel, kernel, mean in zip(X, self.kernels, self.mean)
+                transform(X_channel, mean, kernel, bias)
+                for X_channel, mean, kernel, bias in zip(
+                    X, self.mean, self.kernels, self.bias
+                )
             ],
             axis=-1,
         )

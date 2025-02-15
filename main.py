@@ -17,10 +17,10 @@ if __name__ == "__main__":
     # print(Xt)
 
     start = time.time()
-    pixelhop.fit(np.random.randn(5000, 32, 32, 3))
+    pixelhop.fit(np.random.randn(500, 32, 32, 3))
 
     batch_size = 512
-    X = np.random.randn(1000, 32, 32, 3)
+    X = np.random.randn(100, 32, 32, 3)
     Xt = pixelhop.transform(X)
     num_batches = (X.shape[0] // batch_size) + 1
     Xt = [

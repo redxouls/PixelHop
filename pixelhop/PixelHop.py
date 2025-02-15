@@ -5,11 +5,11 @@ class PixelHop:
     def __init__(self):
         self.layers = [
             SaabLayer(threshold=0.007, channel_wise=False, apply_bias=False),
-            # SaabLayer(threshold=0.001, channel_wise=True, apply_bias=False),
+            SaabLayer(threshold=0.001, channel_wise=True, apply_bias=True),
         ]
         self.shrink_layers = [
-            ShrinkLayer(pool=1, win=7, stride=1, pad=2),
-            # ShrinkLayer(pool=1, win=3, stride=1, pad=1),
+            ShrinkLayer(pool=1, win=7, stride=1, pad=3),
+            ShrinkLayer(pool=1, win=3, stride=1, pad=1),
         ]
 
     def fit(self, X):
@@ -17,9 +17,7 @@ class PixelHop:
         energy_previous = None
         for layer, shrink_layer in zip(self.layers, self.shrink_layers):
             X = shrink_layer.transform(X)
-            X, energy_previous = layer.fit_transform(
-                X, energy_previous=energy_previous, bias_previous=None
-            )
+            X, energy_previous = layer.fit_transform(X, energy_previous=energy_previous)
             # print(layer)
             # print(f"Output Dimension: {X.shape}\n")
 
