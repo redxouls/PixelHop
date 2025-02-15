@@ -6,12 +6,18 @@ from einops import rearrange
 
 @jit
 def pca(X):
-    cov = X.T @ X
-    eva, eve = jnp.linalg.eigh(cov)
-    inds = eva.argsort()[::-1]
-    eva = eva[inds]
-    kernels = eve.T[inds]
-    return kernels, eva / (X.shape[0] - 1)
+    covariance = X.T @ X
+    eigen_values, eigen_vectors = jnp.linalg.eigh(covariance)
+    ind = eigen_values.argsort()[::-1]
+    eigen_values = eigen_values[ind]
+    kernels = eigen_vectors.T[ind]
+    return kernels, eigen_values / (X.shape[0] - 1)
+
+
+@jit
+def locate_cutoff(energy, threshold):
+    mask = jnp.concat([energy < threshold, jnp.array((True,))], axis=0)
+    return jnp.argmax(mask)
 
 
 @jit
@@ -42,8 +48,7 @@ def fit(X, bias_previous, energy_previous, threshold):
     energy = energy * energy_previous
 
     # Find cutoff index
-    mask = jnp.concat([energy < threshold, jnp.array((True,))], axis=0)
-    cutoff_index = jnp.argmax(mask)
+    cutoff_index = locate_cutoff(energy, threshold)
     return mean, bias_current, kernels, energy, cutoff_index
 
 

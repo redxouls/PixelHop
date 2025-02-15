@@ -7,16 +7,15 @@ from pixelhop.ops import shrink
 
 class SaabLayer(Saab):
     def __init__(
-        self, thresholds, channel_wise=False, num_kernels=-1, apply_bias=False
+        self, threshold=0.001, channel_wise=False, num_kernels=-1, apply_bias=False
     ):
         super().__init__(num_kernels, apply_bias)
-        self.thresholds = thresholds
+        self.threshold = threshold
         self.channel_wise = channel_wise
 
     def resize_energy(self, energy_previous):
         if energy_previous is None:
             energy_previous = jnp.ones(self.C)
-
         if self.channel_wise:
             return repeat(energy_previous, "c -> c p", p=self.P)
         else:
@@ -36,7 +35,7 @@ class SaabLayer(Saab):
             X,
             energy_previous=energy_previous,
             bias_previous=bias_previous,
-            threshold=self.thresholds[0],
+            threshold=self.threshold,
         )
 
     def transform(self, X):
@@ -72,17 +71,13 @@ if __name__ == "__main__":
 
     X = np.random.randn(5000, 16, 16, 9, 3)
 
-    saab_layer = SaabLayer(
-        thresholds=[0.002, 0.0001], channel_wise=True, apply_bias=False
-    )
+    saab_layer = SaabLayer(threshold=0.0001, channel_wise=True, apply_bias=False)
     saab_layer.fit(X)
     Xt = saab_layer.transform(X)
 
     # Start benchmark
     start = time.time()
-    saab_layer = SaabLayer(
-        thresholds=[0.002, 0.0001], channel_wise=False, apply_bias=False
-    )
+    saab_layer = SaabLayer(thresholds=0.0001, channel_wise=False, apply_bias=False)
 
     saab_layer.fit(X)
     Xt = saab_layer.transform(X)
