@@ -72,7 +72,6 @@ class Saab:
 
     def fit(self, X, energy_previous, bias_previous=None, threshold=0):
         assert len(X.shape) == 3, "Input must be a 3D array!"
-        X = X.astype(jnp.float32)
 
         if not self.apply_bias:
             self.bias_previous = 0
@@ -94,19 +93,20 @@ class Saab:
             ],
             axis=-1,
         )
+        self.kernels = [
+            jax.lax.dynamic_slice(
+                self.kernels[i],
+                (0, 0),
+                (self.kernels[i].shape[0], self.cutoff_index[i]),
+            )
+            for i in range(len(self.cutoff_index))
+        ]
 
     def transform(self, X):
-        X = X.astype(jnp.float32)
-        transform_batch = vmap(
-            lambda X, mean, kernels: transform(X, self.bias_previous, mean, kernels)
-        )
-        X = transform_batch(X, self.mean, self.kernels)
         X = jnp.concat(
             [
-                jax.lax.dynamic_slice(
-                    X[i], (0, 0), (X[i].shape[0], self.cutoff_index[i])
-                )
-                for i in range(len(self.cutoff_index))
+                transform(X_channel, self.bias_previous, mean, kernel)
+                for X_channel, kernel, mean in zip(X, self.kernels, self.mean)
             ],
             axis=-1,
         )
@@ -121,11 +121,11 @@ if __name__ == "__main__":
     X = rearrange(X[0:1000], "b h w c -> 1 b (h w c)")
 
     saab = Saab(num_kernels=-1, apply_bias=True)
-    saab.fit(X, bias_previous=0)
+    saab.fit(X, threshold=7e-2, bias_previous=0)
     Xt = saab.transform(X)
 
     saab = Saab(num_kernels=-1, apply_bias=True)
-    saab.fit(X, threshold=7e-3, bias_previous=0)
+    saab.fit(X, threshold=7e-2, bias_previous=0)
     Xt = saab.transform(X)
     print(Xt)
 
