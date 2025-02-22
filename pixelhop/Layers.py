@@ -50,13 +50,6 @@ class SaabLayer(Saab):
 
     def fit_transform(self, X, energy_previous=None):
         self.fit(X, energy_previous=energy_previous)
-        # num_batch = (X.shape[0] // self.batch_size) + 1
-        # X = np.concatenate(
-        #     [
-        #         jax.device_get(self.transform(X_batch))
-        #         for X_batch in jnp.array_split(X, num_batch)
-        #     ]
-        # )
         return X, self.energy
 
 
