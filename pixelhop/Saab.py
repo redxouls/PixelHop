@@ -42,8 +42,6 @@ def _covariance_batch(
 
 def _fit(X_batch: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float) -> tuple:
     """Fit the PCA model to the data."""
-    print("start fitting")
-
     num_kernels = X_batch[0].shape[1]
 
     dc_batch = []
@@ -119,6 +117,7 @@ class Saab:
             self.kernels.append(kernels)
             self.energy.append(energy)
 
+        self.energy = jnp.concatenate(self.energy)
         self.mean = jnp.array(self.mean)
         self.bias = jnp.array(self.bias)
 
