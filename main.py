@@ -13,13 +13,13 @@ if __name__ == "__main__":
     print(pixelhop)
 
     jax.profiler.start_trace("./jax-trace")
-    sample = np.random.randn(20000, 32, 32, 3)
+    sample = np.random.randn(10000, 32, 32, 3)
 
     start = time.time()
     pixelhop.fit(sample)
 
     batch_size = 8192
-    X = np.random.randn(50000, 32, 32, 3)
+    X = np.random.randn(20000, 32, 32, 3)
     num_batches = (X.shape[0] // batch_size) + 1
     Xt = [
         jax.device_get(pixelhop.transform(X_batch))
