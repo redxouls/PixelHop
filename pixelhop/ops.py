@@ -2,10 +2,10 @@ import jax
 import flax
 import jax.numpy as jnp
 from einops import rearrange
-from functools import partial
+# from functools import partial
 
 
-@partial(jax.jit, static_argnames=["pool", "win", "stride", "pad"])
+# @partial(jax.jit, static_argnames=["pool", "win", "stride", "pad"])
 def shrink(X, pool, win, stride, pad):
     """
     Apply shrink operation using max pooling and neighborhood construction.
