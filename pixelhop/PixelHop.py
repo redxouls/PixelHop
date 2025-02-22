@@ -13,12 +13,15 @@ class PixelHop:
             # ShrinkLayer(pool=1, win=3, stride=1, pad=1),
         ]
 
-    def fit(self, X):
+    def fit(self, X, batch_size):
         # print(f"Input shape: {X.shape}")
+        num_batch = X.shape[0] // batch_size
+        X_batch = np.split(X[: num_batch * batch_size], num_batch)
+
         energy_previous = None
         for layer, shrink_layer in zip(self.layers, self.shrink_layers):
-            X_batches = shrink_layer.transform(X, split_batch=True)
-            layer.fit(X_batches, energy_previous=energy_previous)
+            X_batch = shrink_layer.transform_batch(X_batch)
+            X_batch, energy_previous = layer.fit_transform(X_batch, energy_previous)
             # print(layer)
             # print(f"Output Dimension: {X.shape}\n")
 

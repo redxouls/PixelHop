@@ -16,7 +16,7 @@ if __name__ == "__main__":
     sample = np.random.randn(50000, 32, 32, 3)
 
     start = time.time()
-    pixelhop.fit(sample)
+    pixelhop.fit(sample, batch_size=8192)
 
     batch_size = 8192
     X = np.random.randn(20000, 32, 32, 3)
