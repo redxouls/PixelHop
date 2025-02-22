@@ -5,11 +5,11 @@ class PixelHop:
     def __init__(self):
         self.layers = [
             SaabLayer(threshold=0.007, channel_wise=False, apply_bias=False),
-            SaabLayer(threshold=0.001, channel_wise=True, apply_bias=True),
+            # SaabLayer(threshold=0.001, channel_wise=True, apply_bias=True),
         ]
         self.shrink_layers = [
             ShrinkLayer(pool=1, win=7, stride=1, pad=3),
-            ShrinkLayer(pool=1, win=3, stride=1, pad=1),
+            # ShrinkLayer(pool=1, win=3, stride=1, pad=1),
         ]
 
     def fit(self, X):

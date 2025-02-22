@@ -1,4 +1,6 @@
+import jax
 import jax.numpy as jnp
+import numpy as np
 from einops import rearrange, repeat
 
 from pixelhop.Saab import Saab
@@ -7,11 +9,17 @@ from pixelhop.ops import shrink
 
 class SaabLayer(Saab):
     def __init__(
-        self, threshold=0.001, channel_wise=False, num_kernels=-1, apply_bias=False
+        self,
+        threshold=0.001,
+        channel_wise=False,
+        num_kernels=-1,
+        apply_bias=False,
+        batch_size=4096,
     ):
         super().__init__(num_kernels, apply_bias)
         self.threshold = threshold
         self.channel_wise = channel_wise
+        self.batch_size = batch_size
 
     def resize_energy(self, energy_previous):
         if energy_previous is None:
@@ -42,22 +50,37 @@ class SaabLayer(Saab):
 
     def fit_transform(self, X, energy_previous=None):
         self.fit(X, energy_previous=energy_previous)
-        X = self.transform(X)
+        # num_batch = (X.shape[0] // self.batch_size) + 1
+        # X = np.concatenate(
+        #     [
+        #         jax.device_get(self.transform(X_batch))
+        #         for X_batch in jnp.array_split(X, num_batch)
+        #     ]
+        # )
         return X, self.energy
 
 
 class ShrinkLayer:
-    def __init__(self, pool, win, stride, pad):
+    def __init__(self, pool, win, stride, pad, batch_size=2**13):
         self.pool = pool
         self.win = win
         self.stride = stride
         self.pad = pad
-
-    def fit(self, X):
-        return shrink(X, self.pool, self.win, self.stride, self.pad)
+        self.batch_size = batch_size
 
     def transform(self, X):
-        return shrink(X, self.pool, self.win, self.stride, self.pad)
+        num_batch = (X.shape[0] // self.batch_size) + 1
+        X = np.concatenate(
+            [
+                jax.device_get(
+                    shrink(X_batch, self.pool, self.win, self.stride, self.pad)
+                )
+                for X_batch in np.array_split(X, num_batch)
+            ],
+            axis=0,
+        )
+        return X
+        # return shrink(X, self.pool, self.win, self.stride, self.pad)
 
 
 if __name__ == "__main__":
