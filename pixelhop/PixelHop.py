@@ -31,7 +31,7 @@ class PixelHop:
         batch_size : int
             Batch size for processing.
         """
-        num_batch = X.shape[0] // batch_size
+        num_batch = max(X.shape[0] // batch_size, 1)
         X_batch = np.split(X[: num_batch * batch_size], num_batch)
 
         energy_previous = None
