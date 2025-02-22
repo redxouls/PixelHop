@@ -1,3 +1,4 @@
+import numpy as np
 from pixelhop.Layers import SaabLayer, ShrinkLayer
 
 
@@ -16,8 +17,8 @@ class PixelHop:
         # print(f"Input shape: {X.shape}")
         energy_previous = None
         for layer, shrink_layer in zip(self.layers, self.shrink_layers):
-            X = shrink_layer.transform(X)
-            X, energy_previous = layer.fit_transform(X, energy_previous=energy_previous)
+            X_batches = shrink_layer.transform(X, split_batch=True)
+            layer.fit(X_batches, energy_previous=energy_previous)
             # print(layer)
             # print(f"Output Dimension: {X.shape}\n")
 

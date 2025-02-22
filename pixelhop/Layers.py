@@ -35,11 +35,11 @@ class SaabLayer(Saab):
         else:
             return rearrange(X, "n h w p c -> 1 (n h w) (c p)")
 
-    def fit(self, X, energy_previous=None):
-        _, self.H, self.W, self.P, self.C = X.shape
-        X = self.resize_input(X)
+    def fit(self, X_batches, energy_previous=None):
+        _, self.H, self.W, self.P, self.C = X_batches[0].shape
+        X_batches = [self.resize_input(X_batch) for X_batch in X_batches]
         energy_previous = self.resize_energy(energy_previous)
-        super().fit(X, energy_previous=energy_previous, threshold=self.threshold)
+        super().fit(X_batches, energy_previous, self.threshold)
 
     def transform(self, X):
         N = X.shape[0]
@@ -68,19 +68,17 @@ class ShrinkLayer:
         self.pad = pad
         self.batch_size = batch_size
 
-    def transform(self, X):
-        num_batch = (X.shape[0] // self.batch_size) + 1
-        X = np.concatenate(
-            [
+    def transform(self, X, split_batch=False):
+        if split_batch:
+            num_batch = (X.shape[0] // self.batch_size) + 1
+            X_batches = [
                 jax.device_get(
                     shrink(X_batch, self.pool, self.win, self.stride, self.pad)
                 )
                 for X_batch in np.array_split(X, num_batch)
-            ],
-            axis=0,
-        )
-        return X
-        # return shrink(X, self.pool, self.win, self.stride, self.pad)
+            ]
+            return X_batches
+        return shrink(X, self.pool, self.win, self.stride, self.pad)
 
 
 if __name__ == "__main__":

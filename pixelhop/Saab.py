@@ -40,35 +40,35 @@ def cov_batch(X: jnp.ndarray, dc: jnp.ndarray, mean: jnp.ndarray) -> jnp.ndarray
 def fit(X: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float) -> tuple:
     """Fit the PCA model to the data."""
     print("start fitting")
-    num_batches = (X.shape[0] // 2**23) + 1
-    mean = jnp.zeros((1, X.shape[1]))
+
+    mean = jnp.zeros((1, X[0][0].shape[1]))
     dc = []
     bias = 0
-    for X_batch in np.array_split(X, num_batches):
-        dc_batch, bias_batch, mean_batch = statistics_batch(X_batch)
-        mean += mean_batch / num_batches
+    for X_batch in X:
+        dc_batch, bias_batch, mean_batch = statistics_batch(X_batch[0])
+        mean += mean_batch / len(X)
         bias = jnp.maximum(bias_batch, bias)
         dc.append(dc_batch)
     dc = jnp.concatenate(dc, axis=0)
 
-    num_batches = (X.shape[0] // 2**22) + 1
-    covariance = jnp.zeros((X.shape[1], X.shape[1]))
-    for X_batch, dc_batch in zip(
-        np.array_split(X, num_batches), np.array_split(dc, num_batches)
-    ):
-        covariance = covariance + cov_batch(X_batch, dc_batch, mean)
+    covariance = jnp.zeros((X[0][0].shape[1], X[0][0].shape[1]))
+    for X_batch, dc_batch in zip(X, np.array_split(dc, len(X))):
+        covariance = covariance + cov_batch(X_batch[0], dc_batch, mean)
 
     kernels, eva = pca(covariance)
-    eva = eva / (X.shape[0] - 1)
+    eva = eva / (sum([X_batch.shape[0] for X_batch in X]) - 1)
+    print(eva.shape)
 
-    num_kernels = X.shape[-1]
+    num_kernels = X[0][0].shape[-1]
     dc_kernel = 1 / jnp.sqrt(num_kernels) * jnp.ones((1, num_kernels))
     kernels = jnp.concatenate((dc_kernel, kernels[:-1]), axis=0).T
+    print(kernels.shape)
 
     largest_ev = jnp.var(dc * jnp.sqrt(num_kernels))
     energy = jnp.concatenate((jnp.array([largest_ev]), eva[:-1]), axis=0)
     energy = energy / jnp.sum(energy)
-    energy = energy * energy_previous
+    # energy = energy * energy_previous
+    print(energy.shape)
 
     cutoff_index = locate_cutoff(energy, threshold)
     return mean, bias, kernels, energy, cutoff_index
@@ -94,27 +94,25 @@ class Saab:
         self.mean = []
         self.energy = []
 
-    def fit(self, X: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float = 0):
+    def fit(self, X, energy_previous: jnp.ndarray, threshold: float = 0):
         """Fit the Saab model to the input data."""
-        assert len(X.shape) == 3, "Input must be a 3D array!"
+        # assert len(X.shape) == 3, "Input must be a 3D array!"
 
         self.mean = []
         self.bias = []
         self.kernels = []
         self.energy = []
 
-        for X_batch, energy_previous_batch in zip(X, energy_previous):
-            mean, bias, kernels, energy, cutoff_index = fit(
-                X_batch, energy_previous_batch, threshold
-            )
-            energy = jax.lax.dynamic_slice(energy, (0,), (cutoff_index,))
-            kernels = jax.lax.dynamic_slice(
-                kernels, (0, 0), (kernels.shape[0], cutoff_index)
-            )
-            self.mean.append(mean)
-            self.bias.append(bias)
-            self.kernels.append(kernels)
-            self.energy.append(energy)
+        # for X_channel, energy_previous_channel in zip(X, energy_previous):
+        mean, bias, kernels, energy, cutoff_index = fit(X, energy_previous, threshold)
+        energy = jax.lax.dynamic_slice(energy, (0,), (cutoff_index,))
+        kernels = jax.lax.dynamic_slice(
+            kernels, (0, 0), (kernels.shape[0], cutoff_index)
+        )
+        self.mean.append(mean)
+        self.bias.append(bias)
+        self.kernels.append(kernels)
+        self.energy.append(energy)
 
         self.mean = jnp.array(self.mean)
         self.bias = jnp.array(self.bias)
