@@ -1,11 +1,11 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
 from jax import jit
+import numpy as np
 
 
 @jit
-def _pca(covariance: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+def pca(covariance: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Perform Principal Component Analysis (PCA) on the covariance matrix."""
     eigen_values, eigen_vectors = jnp.linalg.eigh(covariance)
     ind = eigen_values.argsort()[::-1]
@@ -15,14 +15,14 @@ def _pca(covariance: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
 
 
 @jit
-def _locate_cutoff(energy: jnp.ndarray, threshold: float) -> int:
+def locate_cutoff(energy: jnp.ndarray, threshold: float) -> int:
     """Locate the cutoff index where the energy drops below the threshold."""
     mask = jnp.concatenate([energy < threshold, jnp.array([True])], axis=0)
     return jnp.argmax(mask)
 
 
 @jit
-def _statistics_batch(X: jnp.ndarray) -> tuple[jnp.ndarray, float, jnp.ndarray]:
+def statistics_batch(X: jnp.ndarray) -> tuple[jnp.ndarray, float, jnp.ndarray]:
     """Calculate the DC component, bias, and mean of the batch."""
     dc = jnp.mean(X, axis=1, keepdims=True)
     X_centered = X - dc
@@ -32,15 +32,13 @@ def _statistics_batch(X: jnp.ndarray) -> tuple[jnp.ndarray, float, jnp.ndarray]:
 
 
 @jit
-def _covariance_batch(
-    X: jnp.ndarray, dc: jnp.ndarray, mean: jnp.ndarray
-) -> jnp.ndarray:
+def covariance_batch(X: jnp.ndarray, dc: jnp.ndarray, mean: jnp.ndarray) -> jnp.ndarray:
     """Calculate the covariance matrix for the batch."""
     X_centered = X - dc - mean
     return X_centered.T @ X_centered
 
 
-def _fit(X_batch: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float) -> tuple:
+def fit(X_batch: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float) -> tuple:
     """Fit the PCA model to the data."""
     num_kernels = X_batch[0].shape[1]
 
@@ -48,16 +46,16 @@ def _fit(X_batch: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float) -
     bias = 0
     mean = jnp.zeros((1, num_kernels))
     for X in X_batch:
-        dc_local, bias_local, mean_local = _statistics_batch(X)
+        dc_local, bias_local, mean_local = statistics_batch(X)
         dc_batch.append(dc_local)
         bias = jnp.maximum(bias_local, bias)
         mean += mean_local / len(X)
 
     covariance = jnp.zeros((num_kernels, num_kernels))
     for X, dc in zip(X_batch, dc_batch):
-        covariance = covariance + _covariance_batch(X, dc, mean)
+        covariance = covariance + covariance_batch(X, dc, mean)
 
-    kernels, eva = _pca(covariance)
+    kernels, eva = pca(covariance)
     eva = eva / (sum([X_batch.shape[0] for X_batch in X_batch]) - 1)
 
     dc_kernel = 1 / jnp.sqrt(num_kernels) * jnp.ones((1, num_kernels))
@@ -69,12 +67,12 @@ def _fit(X_batch: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float) -
     energy = energy / jnp.sum(energy)
     energy = energy * energy_previous
 
-    cutoff_index = _locate_cutoff(energy, threshold)
+    cutoff_index = locate_cutoff(energy, threshold)
     return mean, bias, kernels, energy, cutoff_index
 
 
 @jit
-def _transform(
+def transform(
     X: jnp.ndarray, mean: jnp.ndarray, kernel: jnp.ndarray, bias: float
 ) -> jnp.ndarray:
     """Transform the data using the fitted PCA model."""
@@ -100,11 +98,10 @@ class Saab:
         self.kernels = []
         self.energy = []
 
-        # for X_channel, energy_previous_channel in zip(X, energy_previous):
         num_channel, _, num_features = X_batch[0].shape
         for c in range(num_channel):
             X_channel = [X[c] for X in X_batch]
-            mean, bias, kernels, energy, cutoff_index = _fit(
+            mean, bias, kernels, energy, cutoff_index = fit(
                 X_channel, energy_previous[c], threshold
             )
             energy = jax.lax.dynamic_slice(energy, (0,), (cutoff_index,))
@@ -128,7 +125,7 @@ class Saab:
         """Transform the input data using the fitted Saab model."""
         X = jnp.concatenate(
             [
-                _transform(X_channel, mean, kernel, bias)
+                transform(X_channel, mean, kernel, bias)
                 for X_channel, mean, kernel, bias in zip(
                     X, self.mean, self.kernels, self.bias
                 )

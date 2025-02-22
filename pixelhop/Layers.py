@@ -1,13 +1,16 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
 from einops import rearrange, repeat
 
-from pixelhop.Saab import Saab
-from pixelhop.ops import shrink
+from .Saab import Saab
+from .ops import shrink
 
 
 class SaabLayer(Saab):
+    """
+    SaabLayer applies the Saab transformation to the input data.
+    """
+
     def __init__(
         self,
         threshold=0.001,
@@ -16,6 +19,22 @@ class SaabLayer(Saab):
         apply_bias=False,
         batch_size=4096,
     ):
+        """
+        Initialize a SaabLayer.
+
+        Parameters
+        ----------
+        threshold : float
+            Threshold for energy.
+        channel_wise : bool
+            Whether to apply channel-wise transformation.
+        num_kernels : int
+            Number of kernels to use.
+        apply_bias : bool
+            Whether to apply bias.
+        batch_size : int
+            Batch size for processing.
+        """
         super().__init__(num_kernels, apply_bias)
         self.threshold = threshold
         self.channel_wise = channel_wise
@@ -55,7 +74,27 @@ class SaabLayer(Saab):
 
 
 class ShrinkLayer:
+    """
+    ShrinkLayer applies the shrink operation to the input data.
+    """
+
     def __init__(self, pool, win, stride, pad, batch_size=2**13):
+        """
+        Initialize a ShrinkLayer.
+
+        Parameters
+        ----------
+        pool : function
+            Pooling function to use.
+        win : int
+            Window size.
+        stride : int
+            Stride size.
+        pad : int
+            Padding size.
+        batch_size : int
+            Batch size for processing.
+        """
         self.pool = pool
         self.win = win
         self.stride = stride
@@ -67,24 +106,3 @@ class ShrinkLayer:
 
     def transform_batch(self, X_batch):
         return [jax.device_get(self.transform(X)) for X in X_batch]
-
-
-if __name__ == "__main__":
-    import time
-    import numpy as np
-
-    X = np.random.randn(5000, 16, 16, 9, 3)
-
-    saab_layer = SaabLayer(threshold=0.0001, channel_wise=True, apply_bias=False)
-    saab_layer.fit(X)
-    Xt = saab_layer.transform(X)
-
-    # Start benchmark
-    start = time.time()
-    saab_layer = SaabLayer(thresholds=0.0001, channel_wise=False, apply_bias=False)
-
-    saab_layer.fit(X)
-    Xt = saab_layer.transform(X)
-    print(Xt.shape)
-
-    print(time.time() - start)
