@@ -57,3 +57,20 @@ class PixelHop:
             X = shrink_layer.transform(X)
             X = layer.transform(X)
         return X
+
+    def __str__(self):
+        """
+        Return a string representation of the PixelHop instance.
+        """
+        main_str = self.__class__.__name__ + "(\n"
+        for i, (layer, shrink_layer) in enumerate(zip(self.layers, self.shrink_layers)):
+            main_str += f"  (layer_{i}): {layer}\n"
+            main_str += f"  (shrink_layer_{i}): {shrink_layer}\n"
+        main_str += ")"
+        return main_str
+
+    def __repr__(self):
+        """
+        Return a detailed string representation of the PixelHop instance.
+        """
+        return self.__str__()

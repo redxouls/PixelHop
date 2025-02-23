@@ -72,6 +72,12 @@ class SaabLayer(Saab):
         X_batch = [self.transform(X) for X in X_batch]
         return X_batch, self.energy
 
+    def __str__(self):
+        return f"SaabLayer(threshold={self.threshold}, channel_wise={self.channel_wise}, num_kernels={self.num_kernels}, apply_bias={self.apply_bias}, batch_size={self.batch_size})"
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class ShrinkLayer:
     """
@@ -106,3 +112,9 @@ class ShrinkLayer:
 
     def transform_batch(self, X_batch):
         return [jax.device_get(self.transform(X)) for X in X_batch]
+
+    def __str__(self):
+        return f"ShrinkLayer(pool={self.pool}, win={self.win}, stride={self.stride}, pad={self.pad}, batch_size={self.batch_size})"
+
+    def __repr__(self):
+        return self.__str__()
