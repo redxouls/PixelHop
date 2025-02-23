@@ -12,12 +12,7 @@ class SaabLayer(Saab):
     """
 
     def __init__(
-        self,
-        threshold=0.001,
-        channel_wise=False,
-        num_kernels=-1,
-        apply_bias=False,
-        batch_size=4096,
+        self, threshold=0.001, channel_wise=False, num_kernels=-1, apply_bias=False
     ):
         """
         Initialize a SaabLayer.
@@ -38,7 +33,6 @@ class SaabLayer(Saab):
         super().__init__(num_kernels, apply_bias)
         self.threshold = threshold
         self.channel_wise = channel_wise
-        self.batch_size = batch_size
 
     def resize_energy(self, energy_previous):
         if energy_previous is None:
@@ -73,7 +67,7 @@ class SaabLayer(Saab):
         return X_batch, self.energy
 
     def __str__(self):
-        return f"SaabLayer(threshold={self.threshold}, channel_wise={self.channel_wise}, num_kernels={self.num_kernels}, apply_bias={self.apply_bias}, batch_size={self.batch_size})"
+        return f"SaabLayer(threshold={self.threshold}, channel_wise={self.channel_wise}, num_kernels={self.num_kernels}, apply_bias={self.apply_bias})"
 
     def __repr__(self):
         return self.__str__()
@@ -84,7 +78,7 @@ class ShrinkLayer:
     ShrinkLayer applies the shrink operation to the input data.
     """
 
-    def __init__(self, pool, win, stride, pad, batch_size=2**13):
+    def __init__(self, pool, win, stride, pad):
         """
         Initialize a ShrinkLayer.
 
@@ -105,7 +99,6 @@ class ShrinkLayer:
         self.win = win
         self.stride = stride
         self.pad = pad
-        self.batch_size = batch_size
 
     def transform(self, X):
         return shrink(X, self.pool, self.win, self.stride, self.pad)
@@ -114,7 +107,7 @@ class ShrinkLayer:
         return [jax.device_get(self.transform(X)) for X in X_batch]
 
     def __str__(self):
-        return f"ShrinkLayer(pool={self.pool}, win={self.win}, stride={self.stride}, pad={self.pad}, batch_size={self.batch_size})"
+        return f"ShrinkLayer(pool={self.pool}, win={self.win}, stride={self.stride}, pad={self.pad})"
 
     def __repr__(self):
         return self.__str__()
