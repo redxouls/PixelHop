@@ -3,11 +3,40 @@ A JAX Implementation of Saab transformation and shrinking operations.
 
 ## Installation
 
+First, install JAX following the [official installation guide](https://docs.jax.dev/en/latest/installation.html).
+
+```bash
+# For Nvidia GPU 
+pip install "jax[cuda12]"
+
+# For CPU only
+pip install jax
+```
+
+Then, install PixelHop package.
 ```bash
 pip install .
 ```
 
-## Usage
+## Usage 
+
+Please reference following environment variable to allocate resources appropriately.
+
+```python
+import os
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]= "platform"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
+```
+
+or add environment variable in the command
+
+```python
+CUDA_VISIBLE_DEVICES=1,2,3 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_PYTHON_CLIENT_ALLOCATOR=platform python3 xxx.py
+```
+
+
+### Example
 
 ```python
 import numpy as np
