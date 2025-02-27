@@ -60,5 +60,22 @@ pixelhop.fit(sample, batch_size=4096)
 
 X = np.random.randn(2000, 32, 32, 3)
 Xt = pixelhop.transform(X)
+
+
+```
+
+
+By default, jax use GPU and may cause CUDA OOM. To avoid that, we use `jax.device_get` to move result to CPU and `np.concatenate` or `np.array` to merge the array in CPU.
+
+
+```python
+
+X = np.random.randn(20000, 32, 32, 3)
+num_batches = (X.shape[0] // batch_size) + 1
+Xt = [
+    jax.device_get(pixelhop.transform(X_batch))
+    for X_batch in np.array_split(X, num_batches)
+]
+Xt = np.concatenate(Xt)
 print(Xt.shape)
 ```
