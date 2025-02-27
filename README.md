@@ -60,8 +60,7 @@ pixelhop.fit(sample, batch_size=4096)
 
 X = np.random.randn(2000, 32, 32, 3)
 Xt = pixelhop.transform(X)
-
-
+print(Xt.shape)
 ```
 
 
