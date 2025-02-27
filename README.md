@@ -4,7 +4,6 @@ A JAX Implementation of Saab transformation and shrinking operations.
 ## Installation
 
 First, install JAX following the [official installation guide](https://docs.jax.dev/en/latest/installation.html).
-
 ```bash
 # For Nvidia GPU 
 pip install "jax[cuda12]"
@@ -21,7 +20,6 @@ pip install .
 ## Usage 
 
 Please reference following environment variable to allocate resources appropriately.
-
 ```python
 import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -29,12 +27,10 @@ os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]= "platform"
 os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
 ```
 
-or add environment variable in the command
-
+Or add environment variable in the command.
 ```python
 CUDA_VISIBLE_DEVICES=1,2,3 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_PYTHON_CLIENT_ALLOCATOR=platform python3 xxx.py
 ```
-
 
 ### Example
 
@@ -63,12 +59,8 @@ Xt = pixelhop.transform(X)
 print(Xt.shape)
 ```
 
-
 By default, jax use GPU and may cause CUDA OOM. To avoid that, we use `jax.device_get` to move result to CPU and `np.concatenate` or `np.array` to merge the array in CPU.
-
-
 ```python
-
 X = np.random.randn(20000, 32, 32, 3)
 num_batches = (X.shape[0] // batch_size) + 1
 Xt = [
