@@ -1,5 +1,4 @@
 import jax
-import flax
 import jax.numpy as jnp
 from einops import rearrange
 # from functools import partial
@@ -28,12 +27,19 @@ def shrink(X, pool, win, stride, pad):
     jnp.ndarray
         Transformed array.
     """
+
+    # ---- max pooling ----
+    X = jax.lax.reduce_window(
+        X,
+        -jnp.inf,
+        jax.lax.max,
+        (1, pool, pool, 1),
+        (1, pool, pool, 1),
+        padding="VALID",
+    )
+
+    # ---- neighborhood construction ----
     X = rearrange(X, "b h w c -> b c h w")
-
-    # ---- max pooling----
-    X = flax.linen.max_pool(X, (pool, pool), strides=(pool, pool))
-
-    # ---- neighborhood construction
     X = jnp.pad(X, ((0, 0), (0, 0), (pad, pad), (pad, pad)), mode="reflect")
     X = jax.lax.conv_general_dilated_patches(
         lhs=X, filter_shape=(win, win), window_strides=(stride, stride), padding="VALID"

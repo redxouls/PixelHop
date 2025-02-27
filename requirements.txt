@@ -1,4 +1,3 @@
 jax
-flax
 einops
 numpy
