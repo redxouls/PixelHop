@@ -35,6 +35,7 @@ CUDA_VISIBLE_DEVICES=1,2,3 XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_PYTHON_CLIENT
 ### Example
 
 ```python
+import jax
 import numpy as np
 from pixelhop.PixelHop import PixelHop
 from pixelhop.Layers import SaabLayer, ShrinkLayer
