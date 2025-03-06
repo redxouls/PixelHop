@@ -43,10 +43,11 @@ class SaabLayer(Saab):
             return repeat(energy_previous, "c -> 1 (c p)", p=self.P)
 
     def resize_input(self, X):
-        if self.channel_wise:
-            return rearrange(X, "n h w p c -> c (n h w) p")
-        else:
-            return rearrange(X, "n h w p c -> 1 (n h w) (c p)")
+        # if self.channel_wise:
+        #     return rearrange(X, "n h w p c -> c (n h w) p")
+        # else:
+        #     return rearrange(X, "n h w p c -> 1 (n h w) (c p)")
+        return rearrange(X, "n h w p c -> (n h w) p c")
 
     def fit(self, X_batch, energy_previous=None):
         _, self.H, self.W, self.P, self.C = X_batch[0].shape

@@ -1,12 +1,13 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import jit
 
 
-@jit
+# @jit
 def pca(covariance: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Perform Principal Component Analysis (PCA) on the covariance matrix."""
-    eigen_values, eigen_vectors = jnp.linalg.eigh(covariance)
+    eigen_values, eigen_vectors = np.linalg.eigh(np.array(covariance))
     ind = eigen_values.argsort()[::-1]
     eigen_values = eigen_values[ind]
     kernels = eigen_vectors.T[ind]
@@ -23,9 +24,9 @@ def locate_cutoff(energy: jnp.ndarray, threshold: float) -> int:
 @jit
 def statistics_batch(X: jnp.ndarray) -> tuple[jnp.ndarray, float, jnp.ndarray]:
     """Calculate the DC component, bias, and mean of the batch."""
-    dc = jnp.mean(X, axis=1, keepdims=True)
+    dc = jnp.mean(X, axis=(1, 2), keepdims=True)
     X_centered = X - dc
-    bias = jnp.max(jnp.linalg.norm(X_centered, axis=1))
+    bias = jnp.max(jnp.linalg.norm(X_centered, axis=(1, 2)))
     mean = jnp.mean(X_centered, axis=0, keepdims=True)
     return dc, bias, mean
 
@@ -34,34 +35,34 @@ def statistics_batch(X: jnp.ndarray) -> tuple[jnp.ndarray, float, jnp.ndarray]:
 def covariance_batch(X: jnp.ndarray, dc: jnp.ndarray, mean: jnp.ndarray) -> jnp.ndarray:
     """Calculate the covariance matrix for the batch."""
     X_centered = X - dc - mean
-    return X_centered.T @ X_centered
+    return jnp.einsum("npc,nqd->pcqd", X_centered, X_centered)
 
 
 def fit(X_batch: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float) -> tuple:
     """Fit the PCA model to the data."""
-    num_kernels = X_batch[0].shape[1]
+    """Input: N P C"""
+    N, P, C = X_batch[0].shape
 
     dc_batch = []
     bias = 0
-    mean = jnp.zeros((1, num_kernels))
+    mean = jnp.zeros((1, P, C))
     for X in X_batch:
         dc_local, bias_local, mean_local = statistics_batch(X)
         dc_batch.append(dc_local)
         bias = jnp.maximum(bias_local, bias)
         mean += mean_local / len(X)
 
-    covariance = jnp.zeros((num_kernels, num_kernels))
+    covariance = jnp.zeros((P * C, P * C))
     for X, dc in zip(X_batch, dc_batch):
-        covariance = covariance + covariance_batch(X, dc, mean)
+        covariance = covariance + covariance_batch(X, dc, mean).reshape(P * C, P * C)
+    covariance = covariance / (sum([X_batch.shape[0] for X_batch in X_batch]) - 1)
 
     kernels, eva = pca(covariance)
-    eva = eva / (sum([X_batch.shape[0] for X_batch in X_batch]) - 1)
-
-    dc_kernel = 1 / jnp.sqrt(num_kernels) * jnp.ones((1, num_kernels))
+    dc_kernel = 1 / jnp.sqrt(P * C) * jnp.ones((1, P * C))
     kernels = jnp.concatenate((dc_kernel, kernels[:-1]), axis=0).T
 
     dc = jnp.concatenate(dc_batch)
-    largest_ev = jnp.var(dc * jnp.sqrt(num_kernels))
+    largest_ev = jnp.var(dc * jnp.sqrt(P * C))
     energy = jnp.concatenate((jnp.array([largest_ev]), eva[:-1]), axis=0)
     energy = energy / jnp.sum(energy)
     energy = energy * energy_previous
@@ -76,7 +77,7 @@ def transform(
 ) -> jnp.ndarray:
     """Transform the data using the fitted PCA model."""
     X = X - mean
-    X = X @ kernel
+    X = jnp.einsum("nij,ijk->nk", X, kernel.reshape(X.shape[1], X.shape[2], -1))
     X = X + bias
     return X
 
@@ -97,21 +98,21 @@ class Saab:
         self.kernels = []
         self.energy = []
 
-        num_channel, _, num_features = X_batch[0].shape
-        for c in range(num_channel):
-            X_channel = [X[c] for X in X_batch]
-            mean, bias, kernels, energy, cutoff_index = fit(
-                X_channel, energy_previous[c], threshold
-            )
-            energy = jax.lax.dynamic_slice(energy, (0,), (cutoff_index,))
-            kernels = jax.lax.dynamic_slice(
-                kernels, (0, 0), (num_features, cutoff_index)
-            )
+        _, P, C = X_batch[0].shape
+        # for c in range(num_channel):
+        # X_channel = [X[c] for X in X_batch]
+        c = 0
+        X_channel = X_batch
+        mean, bias, kernels, energy, cutoff_index = fit(
+            X_channel, energy_previous[c], threshold
+        )
+        energy = jax.lax.dynamic_slice(energy, (0,), (cutoff_index,))
+        kernels = jax.lax.dynamic_slice(kernels, (0, 0), (P * C, cutoff_index))
 
-            self.mean.append(mean)
-            self.bias.append(bias)
-            self.kernels.append(kernels)
-            self.energy.append(energy)
+        self.mean.append(mean)
+        self.bias.append(bias)
+        self.kernels.append(kernels)
+        self.energy.append(energy)
 
         self.energy = jnp.concatenate(self.energy)
         self.mean = jnp.array(self.mean)
@@ -124,10 +125,8 @@ class Saab:
         """Transform the input data using the fitted Saab model."""
         X = jnp.concatenate(
             [
-                transform(X_channel, mean, kernel, bias)
-                for X_channel, mean, kernel, bias in zip(
-                    X, self.mean, self.kernels, self.bias
-                )
+                transform(X, mean, kernel, bias)
+                for mean, kernel, bias in zip(self.mean, self.kernels, self.bias)
             ],
             axis=-1,
         )
