@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 from jax import jit
-import numpy as np
 
 
 @jit
@@ -61,7 +60,7 @@ def fit(X_batch: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float) ->
     dc_kernel = 1 / jnp.sqrt(num_kernels) * jnp.ones((1, num_kernels))
     kernels = jnp.concatenate((dc_kernel, kernels[:-1]), axis=0).T
 
-    dc = np.concatenate(dc_batch)
+    dc = jnp.concatenate(dc_batch)
     largest_ev = jnp.var(dc * jnp.sqrt(num_kernels))
     energy = jnp.concatenate((jnp.array([largest_ev]), eva[:-1]), axis=0)
     energy = energy / jnp.sum(energy)
