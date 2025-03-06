@@ -2,7 +2,6 @@ if __name__ == "__main__":
     import time
     import jax
     import numpy as np
-    import jax.numpy as jnp
     from pixelhop.PixelHop import PixelHop
     from pixelhop.Layers import SaabLayer, ShrinkLayer
 
@@ -19,10 +18,10 @@ if __name__ == "__main__":
     print(pixelhop)
 
     jax.profiler.start_trace("./jax-trace")
-    sample = np.random.randn(20000, 32, 32, 3)
+    sample = np.random.randn(30000, 64, 64, 3)
 
     start = time.time()
-    pixelhop.fit(sample, batch_size=8192)
+    pixelhop.fit(sample, batch_size=4096)
 
     # batch_size = 4096
     # X = np.random.randn(20000, 32, 32, 3)

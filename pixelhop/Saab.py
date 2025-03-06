@@ -123,7 +123,7 @@ class Saab:
 
     def transform(self, X: jnp.ndarray) -> jnp.ndarray:
         """Transform the input data using the fitted Saab model."""
-        X = jnp.concatenate(
+        X = np.concatenate(
             [
                 transform(X, mean, kernel, bias)
                 for mean, kernel, bias in zip(self.mean, self.kernels, self.bias)

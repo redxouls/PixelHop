@@ -105,7 +105,10 @@ class ShrinkLayer:
         return shrink(X, self.pool, self.win, self.stride, self.pad)
 
     def transform_batch(self, X_batch):
-        return [jax.device_get(self.transform(X)) for X in X_batch]
+        out = []
+        for X in X_batch:
+            out.append(self.transform(X))
+        return out
 
     def __str__(self):
         return f"ShrinkLayer(pool={self.pool}, win={self.win}, stride={self.stride}, pad={self.pad})"
