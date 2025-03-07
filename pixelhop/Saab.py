@@ -55,7 +55,7 @@ def fit(X_batch: jnp.ndarray, energy_previous: jnp.ndarray, threshold: float) ->
     covariance = jnp.zeros((P * C, P * C))
     for X, dc in zip(X_batch, dc_batch):
         covariance = covariance + covariance_batch(X, dc, mean).reshape(P * C, P * C)
-    covariance = covariance / (sum([X_batch.shape[0] for X_batch in X_batch]) - 1)
+    covariance = covariance / (N * len(X_batch) - 1)
 
     kernels, eva = pca(covariance)
     dc_kernel = 1 / jnp.sqrt(P * C) * jnp.ones((1, P * C))
