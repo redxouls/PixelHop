@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from einops import rearrange, repeat
 
 from .Saab import Saab
-from .ops import shrink
+from .ops import shrink, shrink2
 
 
 class SaabLayer(Saab):
@@ -59,12 +59,12 @@ class SaabLayer(Saab):
         N = X.shape[0]
         X = self.resize_input(X)
         X = super().transform(X)
-        X = rearrange(X, "(n h w) c  ->  n h w c", n=N, h=self.H, w=self.W)
+        X = rearrange(X, "(n h w) c -> n h w c", n=N, h=self.H, w=self.W)
         return X
 
     def fit_transform(self, X_batch, energy_previous=None):
         self.fit(X_batch, energy_previous=energy_previous)
-        X_batch = [self.transform(X) for X in X_batch]
+        X_batch = [jax.device_get(self.transform(X)) for X in X_batch]
         return X_batch, self.energy
 
     def __str__(self):
@@ -102,12 +102,12 @@ class ShrinkLayer:
         self.pad = pad
 
     def transform(self, X):
-        return shrink(X, self.pool, self.win, self.stride, self.pad)
+        return shrink2(X, self.pool, self.win, self.stride, self.pad)
 
     def transform_batch(self, X_batch):
         out = []
         for X in X_batch:
-            out.append(self.transform(X))
+            out.append(shrink(X, self.pool, self.win, self.stride, self.pad))
         return out
 
     def __str__(self):

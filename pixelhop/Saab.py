@@ -77,7 +77,7 @@ def transform(
 ) -> jnp.ndarray:
     """Transform the data using the fitted PCA model."""
     X = X - mean
-    X = jnp.einsum("nij,ijk->nk", X, kernel.reshape(X.shape[1], X.shape[2], -1))
+    X = jnp.einsum("nij,ijk->nk", X, kernel.reshape(X.shape[-2], X.shape[-1], -1))
     X = X + bias
     return X
 
@@ -123,7 +123,7 @@ class Saab:
 
     def transform(self, X: jnp.ndarray) -> jnp.ndarray:
         """Transform the input data using the fitted Saab model."""
-        X = np.concatenate(
+        X = jnp.concatenate(
             [
                 transform(X, mean, kernel, bias)
                 for mean, kernel, bias in zip(self.mean, self.kernels, self.bias)
