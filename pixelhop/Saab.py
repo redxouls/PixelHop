@@ -4,10 +4,10 @@ import numpy as np
 from jax import jit
 
 
-# @jit
+@jit
 def pca(covariance: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Perform Principal Component Analysis (PCA) on the covariance matrix."""
-    eigen_values, eigen_vectors = np.linalg.eigh(np.array(covariance))
+    eigen_values, eigen_vectors = jnp.linalg.eigh(covariance)
     ind = eigen_values.argsort()[::-1]
     eigen_values = eigen_values[ind]
     kernels = eigen_vectors.T[ind]

@@ -40,6 +40,7 @@ class SaabLayer(Saab):
         if self.channel_wise:
             return repeat(energy_previous, "c -> c p", p=self.P)
         else:
+            energy_previous = jnp.ones(self.C)
             return repeat(energy_previous, "c -> 1 (c p)", p=self.P)
 
     def resize_input(self, X):
