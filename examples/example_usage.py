@@ -1,10 +1,12 @@
 if __name__ == "__main__":
     import time
+    import jax
     import jax.numpy as jnp
     import numpy as np
     from pixelhop.PixelHop import PixelHop
     from pixelhop.Layers import SaabLayer
 
+    # jax.config.update("jax_enable_x64", True)  # Enables float64 precision globally
     jnp.linalg.eigh(np.random.randn(147, 147))
 
     pixelhop = PixelHop(
@@ -12,7 +14,7 @@ if __name__ == "__main__":
             SaabLayer(
                 pool=1,
                 win=7,
-                stride=1,
+                stride=2,
                 pad=3,
                 threshold=0.007,
                 channel_wise=False,
@@ -23,11 +25,19 @@ if __name__ == "__main__":
                 win=3,
                 stride=1,
                 pad=1,
-                threshold=0.00082,
+                threshold=0.00081,
                 channel_wise=True,
                 apply_bias=False,
             ),
-            # SaabLayer(threshold=0.001, channel_wise=False, apply_bias=False),
+            SaabLayer(
+                pool=1,
+                win=3,
+                stride=1,
+                pad=1,
+                threshold=0.00081,
+                channel_wise=True,
+                apply_bias=False,
+            ),
         ]
     )
 
@@ -35,11 +45,11 @@ if __name__ == "__main__":
 
     # jax.profiler.start_trace("./jax-trace")
     sample = np.random.randn(10000, 64, 64, 3)
-    pixelhop.fit(sample, batch_size=100)
+    pixelhop.fit(sample, batch_size=4096)
 
     print("Start training...")
     start = time.time()
-    pixelhop.fit(sample, batch_size=100)
+    pixelhop.fit(sample, batch_size=4096)
     print(time.time() - start)
 
     batch_size = 2000
