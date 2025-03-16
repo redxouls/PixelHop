@@ -1,9 +1,7 @@
-import jax
 import jax.numpy as jnp
-from einops import rearrange, repeat
+from einops import rearrange
 
 from .Saab import Saab
-from .ops import shrink, shrink2
 
 
 class SaabLayer(Saab):
@@ -12,7 +10,14 @@ class SaabLayer(Saab):
     """
 
     def __init__(
-        self, threshold=0.001, channel_wise=False, num_kernels=-1, apply_bias=False
+        self,
+        pool,
+        win,
+        stride,
+        pad,
+        threshold=0.001,
+        channel_wise=False,
+        apply_bias=False,
     ):
         """
         Initialize a SaabLayer.
@@ -23,96 +28,51 @@ class SaabLayer(Saab):
             Threshold for energy.
         channel_wise : bool
             Whether to apply channel-wise transformation.
-        num_kernels : int
-            Number of kernels to use.
         apply_bias : bool
             Whether to apply bias.
         batch_size : int
             Batch size for processing.
         """
-        super().__init__(num_kernels, apply_bias)
-        self.threshold = threshold
+        super().__init__(pool, win, stride, pad, threshold, apply_bias)
         self.channel_wise = channel_wise
 
     def resize_energy(self, energy_previous):
-        if energy_previous is None:
-            energy_previous = jnp.ones(self.C)
         if self.channel_wise:
-            return repeat(energy_previous, "c -> c p", p=self.P)
+            if energy_previous is None:
+                energy_previous = jnp.ones(self.C)
+            return rearrange(energy_previous, "c -> c 1")
         else:
-            energy_previous = jnp.ones(self.C)
-            return repeat(energy_previous, "c -> 1 (c p)", p=self.P)
+            return jnp.ones((1, 1))
 
     def resize_input(self, X):
-        # if self.channel_wise:
-        #     return rearrange(X, "n h w p c -> c (n h w) p")
-        # else:
-        #     return rearrange(X, "n h w p c -> 1 (n h w) (c p)")
-        return rearrange(X, "n h w p c -> (n h w) p c")
+        if self.channel_wise:
+            return rearrange(X, "n h w c -> c n h w 1")
+        else:
+            return rearrange(X, "n h w c -> 1 n h w c")
 
-    def fit(self, X_batch, energy_previous=None):
-        _, self.H, self.W, self.P, self.C = X_batch[0].shape
+    def fit(self, X_batch, energy_previous):
+        self.C = X_batch[0].shape[-1]
         X_batch = [self.resize_input(X) for X in X_batch]
+        if self.channel_wise:
+            X_batch = [[X[c] for X in X_batch] for c in range(self.C)]
+
         energy_previous = self.resize_energy(energy_previous)
-        super().fit(X_batch, energy_previous, self.threshold)
+        return super().fit(X_batch, energy_previous)
 
     def transform(self, X):
-        N = X.shape[0]
+        N, H, W, _ = X.shape
         X = self.resize_input(X)
         X = super().transform(X)
-        X = rearrange(X, "(n h w) c -> n h w c", n=N, h=self.H, w=self.W)
+        X = rearrange(X, "(n h w) c -> n h w c", n=N, h=H, w=W)
         return X
 
-    def fit_transform(self, X_batch, energy_previous=None):
-        self.fit(X_batch, energy_previous=energy_previous)
-        X_batch = [jax.device_get(self.transform(X)) for X in X_batch]
-        return X_batch, self.energy
+    def fit_transform(self, X_batch, energy_previous):
+        energy_previous = self.fit(X_batch, energy_previous)
+        X_batch = [self.transform(X) for X in X_batch]
+        return X_batch, energy_previous
 
     def __str__(self):
-        return f"SaabLayer(threshold={self.threshold}, channel_wise={self.channel_wise}, num_kernels={self.num_kernels}, apply_bias={self.apply_bias})"
-
-    def __repr__(self):
-        return self.__str__()
-
-
-class ShrinkLayer:
-    """
-    ShrinkLayer applies the shrink operation to the input data.
-    """
-
-    def __init__(self, pool, win, stride, pad):
-        """
-        Initialize a ShrinkLayer.
-
-        Parameters
-        ----------
-        pool : function
-            Pooling function to use.
-        win : int
-            Window size.
-        stride : int
-            Stride size.
-        pad : int
-            Padding size.
-        batch_size : int
-            Batch size for processing.
-        """
-        self.pool = pool
-        self.win = win
-        self.stride = stride
-        self.pad = pad
-
-    def transform(self, X):
-        return shrink2(X, self.pool, self.win, self.stride, self.pad)
-
-    def transform_batch(self, X_batch):
-        out = []
-        for X in X_batch:
-            out.append(shrink(X, self.pool, self.win, self.stride, self.pad))
-        return out
-
-    def __str__(self):
-        return f"ShrinkLayer(pool={self.pool}, win={self.win}, stride={self.stride}, pad={self.pad})"
+        return f"SaabLayer(threshold={self.threshold}, channel_wise={self.channel_wise}, apply_bias={self.apply_bias})"
 
     def __repr__(self):
         return self.__str__()
