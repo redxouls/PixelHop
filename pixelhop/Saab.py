@@ -109,8 +109,8 @@ def _compute_covariance(X_batch, dc_batch, mean, extract_patches, num_kernel):
     return covariance
 
 
-@partial(jax.jit, static_argnames=["pool", "win", "stride", "pad", "batch_size"])
-def _fit(X_batch, energy_previous, pool, win, stride, pad, threshold, batch_size):
+@partial(jax.jit, static_argnames=["pool", "win", "stride", "pad"])
+def _fit(X_batch, energy_previous, pool, win, stride, pad, threshold):
     """
     Compute the mean, bias, and covariance of sliding patches.
 
@@ -120,7 +120,6 @@ def _fit(X_batch, energy_previous, pool, win, stride, pad, threshold, batch_size
         win: Patch size.
         stride: Stride for patches.
         pad: Padding size.
-        batch_size: Batch size.
 
     Returns:
         covariance matrix, mean
@@ -214,7 +213,7 @@ class Saab:
         self.mean = []
         self.energy = []
 
-    def fit(self, X_batch, energy_previous: jnp.ndarray, batch_size=100):
+    def fit(self, X_batch, energy_previous: jnp.ndarray):
         """Fit the Saab model to the input data."""
         results = []
         for X_batch_channel, energy_prev in zip(X_batch, energy_previous):
@@ -226,7 +225,6 @@ class Saab:
                 self.stride,
                 self.pad,
                 self.threshold,
-                batch_size,
             )
             results.append(result)
 
