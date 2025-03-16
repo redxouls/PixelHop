@@ -196,10 +196,16 @@ def transform(
 
     # ---- Apply Padding ----
     X = jnp.pad(X, ((0, 0), (pad, pad), (pad, pad), (0, 0)), mode="reflect")
+    N, H, W, C = X.shape
     X = _extract_patches(X, win, stride)
+
     X = X - mean
     X = X @ kernel
     X = X + bias
+
+    out_h = (H - win) // stride + 1
+    out_w = (W - win) // stride + 1
+    X = rearrange(X, "(n h w) c -> n h w c", n=N, h=out_h, w=out_w)
     return X
 
 

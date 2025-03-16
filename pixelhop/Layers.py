@@ -135,7 +135,7 @@ class SaabLayer(Saab):
         N, H, W, _ = X.shape
         X = self.resize_input(X)
         X = super().transform(X)
-        return rearrange(X, "(n h w) c -> n h w c", n=N, h=H, w=W)
+        return X
 
     def fit_transform(
         self, X_batch: List[jnp.ndarray], energy_previous: Optional[jnp.ndarray]
