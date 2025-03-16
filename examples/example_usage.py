@@ -44,16 +44,16 @@ if __name__ == "__main__":
     print(pixelhop)
 
     # jax.profiler.start_trace("./jax-trace")
-    sample = np.random.randn(10000, 64, 64, 3)
-    pixelhop.fit(sample, batch_size=4096)
+    sample = np.random.randn(10000, 128, 128, 3)
+    pixelhop.fit(sample, batch_size=100)
 
     print("Start training...")
     start = time.time()
-    pixelhop.fit(sample, batch_size=4096)
+    pixelhop.fit(sample, batch_size=100)
     print(time.time() - start)
 
     batch_size = 2000
-    X = np.random.randn(1000, 64, 64, 3)
+    X = np.random.randn(1000, 128, 128, 3)
     print("Start transform...")
     start = time.time()
     num_batches = (X.shape[0] // batch_size) + 1
