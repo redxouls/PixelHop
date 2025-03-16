@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+from einops import rearrange
 from functools import partial
 
 
@@ -45,8 +46,7 @@ def _extract_patches(X, win, stride):
     # Vectorized patch extraction
     i_vals, j_vals = jnp.arange(out_h), jnp.arange(out_w)
     patches = jax.vmap(lambda i: jax.vmap(lambda j: get_patch(i, j, X))(j_vals))(i_vals)
-
-    return patches.reshape(B * out_h * out_w, win * win * C)
+    return rearrange(patches, "h w b p q c -> (b h w) (p q c)")
 
 
 @partial(jax.jit, static_argnames=["extract_patches", "num_kernel"])
