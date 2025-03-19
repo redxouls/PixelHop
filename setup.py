@@ -7,9 +7,9 @@ setup(
     author="Hong-En Chen",
     author_email="hongench@usc.edu",
     packages=find_packages(),
-    install_requires=[
-        "jax",
-        "einops",
-        "numpy",
-    ],
+    # install_requires=[
+    #     "jax",
+    #     "einops",
+    #     "numpy",
+    # ],
 )

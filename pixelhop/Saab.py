@@ -21,19 +21,20 @@ def _locate_cutoff(energy: jnp.ndarray, threshold: float) -> int:
     return jnp.argmax(mask)
 
 
-@partial(jax.jit, static_argnames=["win", "stride"])
-def _extract_patches(X, win, stride):
-    """
-    Extracts sliding patches dynamically from input X using `jax.lax.dynamic_slice`.
+@partial(jax.jit, static_argnames=["pool", "pad", "win", "stride"])
+def _extract_patches(X, pool, pad, win, stride):
+    X = jax.lax.reduce_window(
+        X,
+        -jnp.inf,
+        jax.lax.max,
+        (1, pool, pool, 1),
+        (1, pool, pool, 1),
+        padding="VALID",
+    )
 
-    Args:
-        X: Input tensor (B, H, W, C)
-        win: Patch size.
-        stride: Stride for sliding window.
+    # ---- Apply Padding ----
+    X = jnp.pad(X, ((0, 0), (pad, pad), (pad, pad), (0, 0)), mode="reflect")
 
-    Returns:
-        Patches of shape (B * out_H * out_W, win * win * C)
-    """
     B, H, W, C = X.shape
     out_h = (H - win) // stride + 1
     out_w = (W - win) // stride + 1
@@ -46,117 +47,57 @@ def _extract_patches(X, win, stride):
     # Vectorized patch extraction
     i_vals, j_vals = jnp.arange(out_h), jnp.arange(out_w)
     patches = jax.vmap(lambda i: jax.vmap(lambda j: get_patch(i, j, X))(j_vals))(i_vals)
-    return rearrange(patches, "h w b p q c -> (b h w) (p q c)")
+    return patches
 
 
-@partial(jax.jit, static_argnames=["extract_patches", "num_kernel"])
-def _compute_statistics(X_batch, extract_patches, num_kernel):
-    """
-    Computes local mean (dc_local), bias, and mean update for each batch.
+@jax.jit
+def _statistics(patches):
+    dc_local = jnp.mean(patches, axis=-1, keepdims=True)  # Mean per patch
+    X_centered = patches - dc_local
 
-    Args:
-        X_batch: Batched input tensor.
-        win: Patch size.
-        stride: Stride for patches.
-        num_batches: Number of mini-batches.
-        num_kernel: Number of elements in a single patch.
+    bias_local = jnp.max(jnp.linalg.norm(X_centered, axis=-1))
+    mean_local = jnp.mean(X_centered, axis=0, keepdims=True)
+    return dc_local, bias_local, mean_local
 
-    Returns:
-        mean, bias, dc_batch
-    """
 
-    def scan_statistics(carry, X_cur):
-        mean, bias = carry  # Unpack carry state
+def _compute_statistics(X_batch, extract_patches, num_channel, num_kernel):
+    dc_batch = []
+    mean = jnp.zeros((num_channel, 1, num_kernel))
+    bias = jnp.zeros((num_channel,))
+    for X_cur in X_batch:
         patches = extract_patches(X_cur)
-        dc_local = jnp.mean(patches, axis=-1, keepdims=True)  # Mean per patch
-        X_centered = patches - dc_local
+        dc_local, bias_local, mean_local = jax.vmap(_statistics)(patches)
 
-        bias_local = jnp.max(jnp.linalg.norm(X_centered, axis=-1))
-        mean_local = jnp.mean(X_centered, axis=0, keepdims=True)
+        mean = mean + mean_local
+        bias = jnp.maximum(bias, bias_local)
+        dc_batch.append(dc_local)
 
-        new_mean = mean + mean_local
-        new_bias = jnp.maximum(bias, bias_local)
+    mean /= len(X_batch)
+    return mean, bias, dc_batch
 
-        return (new_mean, new_bias), dc_local
 
-    mean_init = jnp.zeros((1, num_kernel))
-    bias_init = 0.0
-
-    (final_mean, final_bias), dc_batch = jax.lax.scan(
-        scan_statistics, (mean_init, bias_init), X_batch
+@jax.jit
+def _covariance(patches, dc, mean):
+    X_centered = patches - dc - mean
+    return jnp.einsum(
+        "...i,...j->ij", X_centered, X_centered, precision=jax.lax.Precision.HIGHEST
     )
-    final_mean /= len(X_batch)
-
-    return final_mean, final_bias, dc_batch
 
 
-@partial(jax.jit, static_argnames=["num_kernel", "extract_patches"])
-def _compute_covariance(X_batch, dc_batch, mean, extract_patches, num_kernel):
-    def scan_covariance(carry, inputs):
-        X_cur, dc = inputs
+def _compute_covariance(
+    X_batch, dc_batch, mean, extract_patches, num_channel, num_kernel
+):
+    covariance = jnp.zeros((num_channel, num_kernel, num_kernel))
+    for X_cur, dc in zip(X_batch, dc_batch):
         patches = extract_patches(X_cur)
-        X_centered = patches - dc - mean
-
-        carry += jnp.einsum(
-            "...i,...j->ij", X_centered, X_centered, precision=jax.lax.Precision.HIGHEST
-        )
-        return carry, None
-
-    covariance_init = jnp.zeros((num_kernel, num_kernel))
-
-    covariance, _ = jax.lax.scan(scan_covariance, covariance_init, (X_batch, dc_batch))
-
+        covariance += jax.vmap(_covariance)(patches, dc, mean)
     return covariance
 
 
-@partial(jax.jit, static_argnames=["pool", "win", "stride", "pad"])
-def _fit(X_batch, energy_previous, pool, win, stride, pad, threshold):
-    """
-    Compute the mean, bias, and covariance of sliding patches.
-
-    Args:
-        X: Input tensor (B, H, W, C)
-        pool: Pooling size.
-        win: Patch size.
-        stride: Stride for patches.
-        pad: Padding size.
-
-    Returns:
-        covariance matrix, mean
-    """
-    batch_size, H, W, C = X_batch[0].shape
-    num_batches = len(X_batch)
-    num_kernel = win * win * C
-
-    X_batch = jnp.stack(X_batch)
-
-    # ---- Apply Max Pooling ----
-    X_batch = jax.lax.reduce_window(
-        X_batch,
-        -jnp.inf,
-        jax.lax.max,
-        (1, 1, pool, pool, 1),
-        (1, 1, pool, pool, 1),
-        padding="VALID",
-    )
-
-    # ---- Apply Padding ----
-    X_batch = jnp.pad(
-        X_batch, ((0, 0), (0, 0), (pad, pad), (pad, pad), (0, 0)), mode="reflect"
-    )
-
-    # ---- Compute Mean and Bias ----
-    mean, bias, dc_batch = _compute_statistics(
-        X_batch, lambda X: _extract_patches(X, win, stride), num_kernel
-    )
-
-    # ---- Compute Covariance ----
-    covariance = _compute_covariance(
-        X_batch, dc_batch, mean, lambda X: _extract_patches(X, win, stride), num_kernel
-    )
-    covariance /= batch_size * num_batches * H * W - 1
-
+@jax.jit
+def _compute_kernel(covariance, dc_batch, energy_previous, threshold):
     # Apply PCA
+    num_kernel = covariance.shape[0]
     kernels, eva = _pca(covariance)
     dc_kernel = 1 / jnp.sqrt(num_kernel) * jnp.ones((1, num_kernel))
     kernels = jnp.concatenate((dc_kernel, kernels[:-1]), axis=0).T
@@ -169,81 +110,83 @@ def _fit(X_batch, energy_previous, pool, win, stride, pad, threshold):
     energy = energy * energy_previous
 
     cutoff_index = _locate_cutoff(energy, threshold)
+    return kernels, energy, cutoff_index
+
+
+# @partial(jax.jit, static_argnames=["pool", "win", "stride", "pad"])
+def _fit(X_batch, energy_previous, extract_patches, threshold):
+    batch_size, H, W, C = X_batch[0].shape
+    num_batches = len(X_batch)
+    num_channel, _, num_kernel = extract_patches(X_batch[0]).shape
+
+    # ---- Compute Mean and Bias ----
+    mean, bias, dc_batch = _compute_statistics(
+        X_batch, extract_patches, num_channel, num_kernel
+    )
+
+    # ---- Compute Covariance ----
+    covariance = _compute_covariance(
+        X_batch, dc_batch, mean, extract_patches, num_channel, num_kernel
+    )
+    covariance /= batch_size * num_batches * H * W - 1
+
+    kernels, energy, cutoff_index = jax.vmap(
+        lambda covariance, dc_batch, energy_previous: _compute_kernel(
+            covariance, dc_batch, energy_previous, threshold
+        )
+    )(covariance, dc_batch, energy_previous)
+
     return mean, bias, kernels, energy, cutoff_index
 
 
 # @jax.jit
-@partial(jax.jit, static_argnames=["pool", "win", "stride", "pad"])
+@partial(jax.jit)
 def transform(
-    X: jnp.ndarray,
-    mean: jnp.ndarray,
-    kernel: jnp.ndarray,
-    bias: float,
-    pool,
-    win,
-    stride,
-    pad,
+    X: jnp.ndarray, mean: jnp.ndarray, kernel: jnp.ndarray, bias: float
 ) -> jnp.ndarray:
-    """Transform the data using the fitted PCA model."""
-    X = jax.lax.reduce_window(
-        X,
-        -jnp.inf,
-        jax.lax.max,
-        (1, pool, pool, 1),
-        (1, pool, pool, 1),
-        padding="VALID",
-    )
-
-    # ---- Apply Padding ----
-    X = jnp.pad(X, ((0, 0), (pad, pad), (pad, pad), (0, 0)), mode="reflect")
-    N, H, W, C = X.shape
-    X = _extract_patches(X, win, stride)
-
     X = X - mean
     X = X @ kernel
     X = X + bias
-
-    out_h = (H - win) // stride + 1
-    out_w = (W - win) // stride + 1
-    X = rearrange(X, "(n h w) c -> n h w c", n=N, h=out_h, w=out_w)
     return X
 
 
 class Saab:
-    def __init__(self, pool, win, stride, pad, threshold, apply_bias: bool = False):
+    def __init__(
+        self,
+        pool,
+        win,
+        stride,
+        pad,
+        threshold,
+        channel_wise,
+        apply_bias: bool = False,
+    ):
         self.pool, self.win, self.stride, self.pad = pool, win, stride, pad
         self.threshold = threshold
+        self.channel_wise = channel_wise
         self.apply_bias = apply_bias
         self.bias = []
         self.kernels = []
         self.mean = []
         self.energy = []
 
-    def fit(self, X_batch, energy_previous: jnp.ndarray):
+    def fit(self, X_batch, energy_previous: jnp.ndarray, transform_previous):
         """Fit the Saab model to the input data."""
-        results = []
-        for X_batch_channel, energy_prev in zip(X_batch, energy_previous):
-            result = _fit(
-                X_batch_channel,
-                energy_prev,
-                self.pool,
-                self.win,
-                self.stride,
-                self.pad,
-                self.threshold,
+
+        def extract_patches(X):
+            patches = _extract_patches(
+                transform_previous(X), self.pool, self.pad, self.win, self.stride
             )
-            results.append(result)
+            if self.channel_wise:
+                return rearrange(patches, "h w b p q c -> c (b h w) (p q)")
+            else:
+                return rearrange(patches, "h w b p q c -> 1 (b h w) (p q c)")
 
-        self.mean, self.bias, self.kernels, self.energy, self.cutoff_index = zip(
-            *results
-        )
+        if not self.channel_wise:
+            energy_previous = jnp.ones(1)
 
-        self.mean, self.bias, self.kernels, self.energy, self.cutoff_index = (
-            jnp.array(self.mean),
-            jnp.array(self.bias),
-            jnp.array(self.kernels),
-            jnp.array(self.energy),
-            jnp.array(self.cutoff_index),
+        self.mean, self.bias, self.kernels, self.energy, self.cutoff_index = _fit(
+            X_batch, energy_previous, extract_patches, self.threshold
         )
 
         # Remove kernel and engery below thresholds
@@ -271,22 +214,20 @@ class Saab:
 
     def transform(self, X: jnp.ndarray) -> jnp.ndarray:
         """Transform the input data using the fitted Saab model."""
+        patches = _extract_patches(X, self.pool, self.pad, self.win, self.stride)
+        H, W, N = patches.shape[:3]
+        if self.channel_wise:
+            patches = rearrange(patches, "h w b p q c -> c (b h w) (p q)")
+        else:
+            patches = rearrange(patches, "h w b p q c -> 1 (b h w) (p q c)")
+
         X = jnp.concat(
             [
-                transform(
-                    X_channel,
-                    mean,
-                    kernel,
-                    bias,
-                    self.pool,
-                    self.win,
-                    self.stride,
-                    self.pad,
-                )
+                transform(X_channel, mean, kernel, bias)
                 for X_channel, mean, kernel, bias in zip(
-                    X, self.mean, self.kernels, self.bias
+                    patches, self.mean, self.kernels, self.bias
                 )
             ],
             axis=-1,
         )
-        return X
+        return rearrange(X, "(n h w) c -> n h w c", n=N, h=H, w=W)
