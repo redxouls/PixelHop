@@ -31,7 +31,8 @@ class PixelHop:
             Batch size for processing.
         """
 
-        num_batch = max(X.shape[0] // batch_size, 1)
+        N, H, W, _ = X.shape
+        num_batch = max(N // batch_size, 1)
         X_batch = np.array_split(X[: num_batch * batch_size], num_batch)
         energy_previous = jnp.ones(1)
 
@@ -40,8 +41,8 @@ class PixelHop:
             return X
 
         for i, layer in enumerate(self.layers):
-            energy_previous = layer.fit_transform(
-                X_batch, energy_previous, transform_previous
+            energy_previous, H, W = layer.fit(
+                X_batch, energy_previous, H, W, transform_previous
             )
 
             @jax.jit

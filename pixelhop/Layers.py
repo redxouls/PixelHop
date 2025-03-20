@@ -20,22 +20,15 @@ class SaabLayer(Saab):
         self,
         X_batch: List[jnp.ndarray],
         energy_previous: Optional[jnp.ndarray],
+        H,
+        W,
         transform_previous,
     ) -> jnp.ndarray:
-        return super().fit(X_batch, energy_previous, transform_previous)
+        return super().fit(X_batch, energy_previous, H, W, transform_previous)
 
     def transform(self, X: jnp.ndarray) -> jnp.ndarray:
         X = super().transform(X)
         return X
-
-    def fit_transform(
-        self,
-        X_batch: List[jnp.ndarray],
-        energy_previous: Optional[jnp.ndarray],
-        transform_previous,
-    ) -> Tuple[List[jnp.ndarray], jnp.ndarray]:
-        energy_previous = self.fit(X_batch, energy_previous, transform_previous)
-        return energy_previous
 
     def __str__(self) -> str:
         return (

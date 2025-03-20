@@ -18,21 +18,12 @@ def _locate_cutoff(energy, threshold):
     return jnp.argmax(jnp.concatenate([energy < threshold, jnp.array([True])]))
 
 
-@partial(jax.jit, static_argnames=["pool", "pad", "win", "stride"])
-def _extract_patches(X, pool, pad, win, stride):
+@partial(jax.jit, static_argnames=["pool", "pad", "win", "stride", "out_h", "out_w"])
+def _extract_patches(X, pool, pad, win, stride, out_h, out_w):
+    B = X.shape[0]
+    C = X.shape[-1]
     """Extract sliding patches from the input tensor."""
-    B, H, W, C = X.shape
-
     # Compute output height and width after pooling
-    H = (H - pool) // pool + 1
-    W = (W - pool) // pool + 1
-
-    # Compute output height and width after padding and window sliding
-    out_h, out_w = (
-        (H + 2 * pad - win) // stride + 1,
-        (W + 2 * pad - win) // stride + 1,
-    )
-
     X = jax.lax.reduce_window(
         X,
         -jnp.inf,
@@ -103,6 +94,7 @@ def _compute_covariance(
 @jax.jit
 def _compute_kernel(covariance, dc_batch, energy_previous, threshold):
     """Compute PCA kernels and energy distribution."""
+    print("Compiling _compute_kernel()", covariance.shape)
     num_kernel = covariance.shape[0]
     kernels, eigen_values = _pca(covariance)
     kernels = jnp.concatenate(
@@ -123,7 +115,7 @@ def _fit(X_batch, energy_previous, extract_patches, threshold):
     """Fit the Saab model to a batch of input data."""
     num_batches = len(X_batch)
     batch_size, H, W, _ = X_batch[0].shape
-    num_channel, _, num_kernel = extract_patches(X_batch[0]).shape
+    num_channel, _, num_kernel = extract_patches(X_batch[0][0:1]).shape
 
     mean, bias, dc_batch = _compute_statistics(
         X_batch, extract_patches, num_channel, num_kernel
@@ -133,27 +125,27 @@ def _fit(X_batch, energy_previous, extract_patches, threshold):
     )
     covariance /= batch_size * num_batches * H * W - 1
 
-    kernels, energy, cutoff_index = jax.vmap(
-        lambda covariance, dc_batch, energy_previous: _compute_kernel(
-            covariance, dc_batch, energy_previous, threshold
-        )
-    )(covariance, dc_batch, energy_previous)
+    threshold = jnp.ones((num_channel,)) * threshold
+    kernels, energy, cutoff_index = jax.vmap(_compute_kernel)(
+        covariance, dc_batch, energy_previous, threshold
+    )
 
     return mean, bias, kernels, energy, cutoff_index
 
 
 @jax.jit
-def _transform(X, mean, kernel, bias):
+def _transform_channel(X, mean, kernel, bias):
     """Apply learned transformation."""
     return (X - mean) @ kernel + bias
 
 
 @partial(jax.jit, static_argnames=["extract_patches", "out_h", "out_w"])
-def _transform_new(X, mean, bias, kernels, extract_patches, out_h, out_w):
+def _transform(X, mean, bias, kernels, extract_patches, out_h, out_w):
+    print("Compiling _transform()", X.shape)
     patches = extract_patches(X)
     X = jnp.concatenate(
         [
-            _transform(X_channel, mean_channel, kernel_channel, bias_channel)
+            _transform_channel(X_channel, mean_channel, kernel_channel, bias_channel)
             for X_channel, mean_channel, kernel_channel, bias_channel in zip(
                 patches, mean, kernels, bias
             )
@@ -177,15 +169,37 @@ class Saab:
 
     @partial(jax.jit, static_argnames=["self"])
     def extract_patches(self, X):
-        print(self.channel_wise, self.pool, self.pad, self.win, self.stride)
-        patches = _extract_patches(X, self.pool, self.pad, self.win, self.stride)
+        _, H, W, _ = X.shape
+        print(
+            "Compiling extract_patches()",
+            X.shape,
+            self.channel_wise,
+            self.pool,
+            self.pad,
+            self.win,
+            self.stride,
+            self.out_h,
+            self.out_w,
+        )
+        patches = _extract_patches(
+            X, self.pool, self.pad, self.win, self.stride, self.out_h, self.out_w
+        )
         if self.channel_wise:
             return rearrange(patches, "h w b p q c -> c (b h w) (p q)")
         else:
             return rearrange(patches, "h w b p q c -> 1 (b h w) (p q c)")
 
-    def fit(self, X_batch, energy_previous, transform_previous):
+    def fit(self, X_batch, energy_previous, H, W, transform_previous):
         """Fit the Saab model to input data."""
+        # Compute output height and width after pooling
+        H = (H - self.pool) // self.pool + 1
+        W = (W - self.pool) // self.pool + 1
+
+        # Compute output height and width after padding and window sliding
+        self.out_h, self.out_w = (
+            (H + 2 * self.pad - self.win) // self.stride + 1,
+            (W + 2 * self.pad - self.win) // self.stride + 1,
+        )
 
         if not self.channel_wise:
             energy_previous = jnp.ones(1)
@@ -205,6 +219,7 @@ class Saab:
             ],
             axis=-1,
         )
+        print(self.energy[:30])
 
         self.kernels = [
             jax.lax.dynamic_slice(
@@ -218,22 +233,16 @@ class Saab:
         if not self.apply_bias:
             self.bias = jnp.zeros_like(self.bias)
 
-        return self.energy
+        return self.energy, self.out_h, self.out_w
 
     def transform(self, X):
         """Transform input data using the fitted Saab model."""
-        B, H, W, C = X.shape
-
-        # Compute output height and width after pooling
-        H = (H - self.pool) // self.pool + 1
-        W = (W - self.pool) // self.pool + 1
-
-        # Compute output height and width after padding and window sliding
-        out_h, out_w = (
-            (H + 2 * self.pad - self.win) // self.stride + 1,
-            (W + 2 * self.pad - self.win) // self.stride + 1,
-        )
-
-        return _transform_new(
-            X, self.mean, self.bias, self.kernels, self.extract_patches, out_h, out_w
+        return _transform(
+            X,
+            self.mean,
+            self.bias,
+            self.kernels,
+            self.extract_patches,
+            self.out_h,
+            self.out_w,
         )
