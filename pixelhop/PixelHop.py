@@ -1,5 +1,6 @@
-import numpy as np
+import jax
 import jax.numpy as jnp
+import numpy as np
 
 
 class PixelHop:
@@ -34,6 +35,7 @@ class PixelHop:
         X_batch = np.array_split(X[: num_batch * batch_size], num_batch)
         energy_previous = jnp.ones(1)
 
+        @jax.jit
         def transform_previous(X):
             return X
 
@@ -42,6 +44,7 @@ class PixelHop:
                 X_batch, energy_previous, transform_previous
             )
 
+            @jax.jit
             def transform_previous(X):
                 for layer in self.layers[:i]:
                     X = layer.transform(X)

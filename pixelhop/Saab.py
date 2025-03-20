@@ -21,6 +21,18 @@ def _locate_cutoff(energy, threshold):
 @partial(jax.jit, static_argnames=["pool", "pad", "win", "stride"])
 def _extract_patches(X, pool, pad, win, stride):
     """Extract sliding patches from the input tensor."""
+    B, H, W, C = X.shape
+
+    # Compute output height and width after pooling
+    H = (H - pool) // pool + 1
+    W = (W - pool) // pool + 1
+
+    # Compute output height and width after padding and window sliding
+    out_h, out_w = (
+        (H + 2 * pad - win) // stride + 1,
+        (W + 2 * pad - win) // stride + 1,
+    )
+
     X = jax.lax.reduce_window(
         X,
         -jnp.inf,
@@ -29,9 +41,8 @@ def _extract_patches(X, pool, pad, win, stride):
         (1, pool, pool, 1),
         padding="VALID",
     )
+
     X = jnp.pad(X, ((0, 0), (pad, pad), (pad, pad), (0, 0)), mode="reflect")
-    B, H, W, C = X.shape
-    out_h, out_w = ((H - win) // stride + 1, (W - win) // stride + 1)
 
     def get_patch(i, j, X):
         return jax.lax.dynamic_slice(
@@ -137,6 +148,21 @@ def _transform(X, mean, kernel, bias):
     return (X - mean) @ kernel + bias
 
 
+@partial(jax.jit, static_argnames=["extract_patches", "out_h", "out_w"])
+def _transform_new(X, mean, bias, kernels, extract_patches, out_h, out_w):
+    patches = extract_patches(X)
+    X = jnp.concatenate(
+        [
+            _transform(X_channel, mean_channel, kernel_channel, bias_channel)
+            for X_channel, mean_channel, kernel_channel, bias_channel in zip(
+                patches, mean, kernels, bias
+            )
+        ],
+        axis=-1,
+    )
+    return rearrange(X, "(n h w) c -> n h w c", h=out_h, w=out_w)
+
+
 class Saab:
     """Saab feature extraction model."""
 
@@ -149,20 +175,24 @@ class Saab:
         self.apply_bias = apply_bias
         self.bias, self.kernels, self.mean, self.energy = [], [], [], []
 
+    @partial(jax.jit, static_argnames=["self"])
+    def extract_patches(self, X):
+        print(self.channel_wise, self.pool, self.pad, self.win, self.stride)
+        patches = _extract_patches(X, self.pool, self.pad, self.win, self.stride)
+        if self.channel_wise:
+            return rearrange(patches, "h w b p q c -> c (b h w) (p q)")
+        else:
+            return rearrange(patches, "h w b p q c -> 1 (b h w) (p q c)")
+
     def fit(self, X_batch, energy_previous, transform_previous):
         """Fit the Saab model to input data."""
 
-        def extract_patches(X):
-            patches = _extract_patches(
-                transform_previous(X), self.pool, self.pad, self.win, self.stride
-            )
-            if self.channel_wise:
-                return rearrange(patches, "h w b p q c -> c (b h w) (p q)")
-            else:
-                return rearrange(patches, "h w b p q c -> 1 (b h w) (p q c)")
-
         if not self.channel_wise:
             energy_previous = jnp.ones(1)
+
+        @jax.jit
+        def extract_patches(X):
+            return self.extract_patches(transform_previous(X))
 
         self.mean, self.bias, self.kernels, self.energy, self.cutoff_index = _fit(
             X_batch, energy_previous, extract_patches, self.threshold
@@ -192,20 +222,18 @@ class Saab:
 
     def transform(self, X):
         """Transform input data using the fitted Saab model."""
-        patches = _extract_patches(X, self.pool, self.pad, self.win, self.stride)
-        H, W, N = patches.shape[:3]
-        if self.channel_wise:
-            patches = rearrange(patches, "h w b p q c -> c (b h w) (p q)")
-        else:
-            patches = rearrange(patches, "h w b p q c -> 1 (b h w) (p q c)")
+        B, H, W, C = X.shape
 
-        X = jnp.concatenate(
-            [
-                _transform(X_channel, mean, kernel, bias)
-                for X_channel, mean, kernel, bias in zip(
-                    patches, self.mean, self.kernels, self.bias
-                )
-            ],
-            axis=-1,
+        # Compute output height and width after pooling
+        H = (H - self.pool) // self.pool + 1
+        W = (W - self.pool) // self.pool + 1
+
+        # Compute output height and width after padding and window sliding
+        out_h, out_w = (
+            (H + 2 * self.pad - self.win) // self.stride + 1,
+            (W + 2 * self.pad - self.win) // self.stride + 1,
         )
-        return rearrange(X, "(n h w) c -> n h w c", n=N, h=H, w=W)
+
+        return _transform_new(
+            X, self.mean, self.bias, self.kernels, self.extract_patches, out_h, out_w
+        )
