@@ -136,23 +136,23 @@ def _fit(X_batch, energy_previous, extract_patches, threshold):
 @jax.jit
 def _transform_channel(X, mean, kernel, bias):
     """Apply learned transformation."""
+    print("Compiling _transform_channel()", X.shape)
     return (X - mean) @ kernel + bias
+
+
+@partial(jax.jit, static_argnames=["out_h", "out_w"])
+def _resize_output(X, out_h, out_w):
+    print("Compiling _resize_output()", out_h, out_w)
+    X = jnp.concatenate(X, axis=-1)
+    return rearrange(X, "(n h w) c -> n h w c", h=out_h, w=out_w)
 
 
 @partial(jax.jit, static_argnames=["extract_patches", "out_h", "out_w"])
 def _transform(X, mean, bias, kernels, extract_patches, out_h, out_w):
     print("Compiling _transform()", X.shape)
-    patches = extract_patches(X)
-    X = jnp.concatenate(
-        [
-            _transform_channel(X_channel, mean_channel, kernel_channel, bias_channel)
-            for X_channel, mean_channel, kernel_channel, bias_channel in zip(
-                patches, mean, kernels, bias
-            )
-        ],
-        axis=-1,
-    )
-    return rearrange(X, "(n h w) c -> n h w c", h=out_h, w=out_w)
+    patches = tuple(jnp.unstack(extract_patches(X)))
+    X = jax.tree.map(_transform_channel, patches, mean, kernels, bias)
+    return _resize_output(X, out_h, out_w)
 
 
 class Saab:
@@ -219,19 +219,24 @@ class Saab:
             ],
             axis=-1,
         )
+
         print(self.energy[:30])
 
-        self.kernels = [
+        self.kernels = tuple(
             jax.lax.dynamic_slice(
                 self.kernels[i],
                 (0, 0),
                 (self.kernels[i].shape[0], self.cutoff_index[i]),
             )
             for i in range(len(self.cutoff_index))
-        ]
+        )
 
         if not self.apply_bias:
             self.bias = jnp.zeros_like(self.bias)
+
+        self.mean = tuple(jnp.unstack(self.mean))
+        self.bias = tuple(jnp.unstack(self.bias))
+        print(len(self.kernels), len(self.mean), len(self.bias))
 
         return self.energy, self.out_h, self.out_w
 
