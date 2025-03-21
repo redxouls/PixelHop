@@ -94,7 +94,6 @@ def _compute_covariance(
 @jax.jit
 def _compute_kernel(covariance, dc_batch, energy_previous, threshold):
     """Compute PCA kernels and energy distribution."""
-    print("Compiling _compute_kernel()", covariance.shape)
     num_kernel = covariance.shape[0]
     kernels, eigen_values = _pca(covariance)
     kernels = jnp.concatenate(
@@ -136,20 +135,17 @@ def _fit(X_batch, energy_previous, extract_patches, threshold):
 @jax.jit
 def _transform_channel(X, mean, kernel, bias):
     """Apply learned transformation."""
-    print("Compiling _transform_channel()", X.shape)
     return (X - mean) @ kernel + bias
 
 
 @partial(jax.jit, static_argnames=["out_h", "out_w"])
 def _resize_output(X, out_h, out_w):
-    print("Compiling _resize_output()", out_h, out_w)
     X = jnp.concatenate(X, axis=-1)
     return rearrange(X, "(n h w) c -> n h w c", h=out_h, w=out_w)
 
 
 @partial(jax.jit, static_argnames=["extract_patches", "out_h", "out_w"])
 def _transform(X, mean, bias, kernels, extract_patches, out_h, out_w):
-    print("Compiling _transform()", X.shape)
     patches = tuple(jnp.unstack(extract_patches(X)))
     X = jax.tree.map(_transform_channel, patches, mean, kernels, bias)
     return _resize_output(X, out_h, out_w)
@@ -169,18 +165,6 @@ class Saab:
 
     @partial(jax.jit, static_argnames=["self"])
     def extract_patches(self, X):
-        _, H, W, _ = X.shape
-        print(
-            "Compiling extract_patches()",
-            X.shape,
-            self.channel_wise,
-            self.pool,
-            self.pad,
-            self.win,
-            self.stride,
-            self.out_h,
-            self.out_w,
-        )
         patches = _extract_patches(
             X, self.pool, self.pad, self.win, self.stride, self.out_h, self.out_w
         )
@@ -220,8 +204,6 @@ class Saab:
             axis=-1,
         )
 
-        print(self.energy[:30])
-
         self.kernels = tuple(
             jax.lax.dynamic_slice(
                 self.kernels[i],
@@ -236,7 +218,6 @@ class Saab:
 
         self.mean = tuple(jnp.unstack(self.mean))
         self.bias = tuple(jnp.unstack(self.bias))
-        print(len(self.kernels), len(self.mean), len(self.bias))
 
         return self.energy, self.out_h, self.out_w
 
