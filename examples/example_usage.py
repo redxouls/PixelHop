@@ -28,21 +28,20 @@ if __name__ == "__main__":
                 channel_wise=True,
                 apply_bias=False,
             ),
-            # SaabLayer(
-            #     pool=2,
-            #     win=3,
-            #     stride=1,
-            #     pad=1,
-            #     threshold=0.0006,
-            #     channel_wise=True,
-            #     apply_bias=False,
-            # ),
+            SaabLayer(
+                pool=2,
+                win=3,
+                stride=1,
+                pad=1,
+                threshold=0.001,
+                channel_wise=True,
+                apply_bias=False,
+            ),
         ]
     )
-
     print(pixelhop)
 
-    jax.profiler.start_trace("./jax-trace")
+    # jax.profiler.start_trace("./jax-trace")
     sample = np.random.randn(800, 128, 128, 12)
 
     print("Start training...")
@@ -52,12 +51,13 @@ if __name__ == "__main__":
 
     batch_size = 40
     print(pixelhop.transform(np.random.randn(batch_size, 128, 128, 12)))
+
     X = np.random.randn(800, 128, 128, 12)
     print("Start transform...")
     start = time.time()
     num_batches = max(X.shape[0] // batch_size, 1)
     Xt = [pixelhop.transform(X_batch) for X_batch in np.array_split(X, num_batches)]
-    print(Xt[0][0][0])
+    print(Xt)
     print(Xt[0].shape)
     print(time.time() - start)
-    jax.profiler.stop_trace()
+    # jax.profiler.stop_trace()

@@ -1,86 +1,89 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+from typing import List, Callable, Union
+
+
+def make_transform_fn(layers_subset: List[Callable]) -> Callable:
+    """
+    Create a JAX-compiled transform function that sequentially applies a list of layers.
+
+    Args:
+        layers_subset (List[Callable]): Layers to apply in order.
+
+    Returns:
+        Callable: A function that applies all layers to an input tensor.
+    """
+
+    @jax.jit
+    def transform(X: jnp.ndarray) -> jnp.ndarray:
+        for layer in layers_subset:
+            X = layer.transform(X)
+        return X
+
+    return transform
 
 
 class PixelHop:
     """
-    PixelHop class that applies multiple Saab and Shrink layers to the input data.
+    PixelHop class that applies a sequence of Saab-based transformations to input data.
     """
 
-    def __init__(self, layers=[]):
+    def __init__(self, layers: List[Callable]):
         """
         Initialize a PixelHop instance.
 
-        Parameters
-        ----------
-        layers : list
-            List of SaabLayer instances.
+        Args:
+            layers (List[Callable]): List of fitted SaabLayer instances.
         """
         self.layers = layers
 
-    def fit(self, X, batch_size):
+    def fit(self, X: np.ndarray, batch_size: int) -> None:
         """
-        Fit the PixelHop model to the input data.
+        Fit the PixelHop model across all layers using the input data.
 
-        Parameters
-        ----------
-        X : np.ndarray
-            Input data.
-        batch_size : int
-            Batch size for processing.
+        Args:
+            X (np.ndarray): Input data of shape (N, H, W, C).
+            batch_size (int): Batch size for splitting input data.
         """
+        num_samples, height, width, _ = X.shape
+        num_batches = max(num_samples // batch_size, 1)
+        X_batches = np.array_split(X[: num_batches * batch_size], num_batches)
 
-        N, H, W, _ = X.shape
-        num_batch = max(N // batch_size, 1)
-        X_batch = np.array_split(X[: num_batch * batch_size], num_batch)
-        energy_previous = jnp.ones(1)
+        previous_energy = jnp.ones(1)
 
-        @jax.jit
-        def transform_previous(X):
-            return X
-
+        # Initial no-op transformation
         for i, layer in enumerate(self.layers):
-            energy_previous, H, W = layer.fit(
-                X_batch, energy_previous, H, W, transform_previous
+            transform_fn = make_transform_fn(self.layers[:i])
+            previous_energy, height, width = layer.fit(
+                X_batches, previous_energy, height, width, transform_fn
             )
 
-            @jax.jit
-            def transform_previous(X):
-                for layer in self.layers[:i]:
-                    X = layer.transform(X)
-                return X
-
-    def transform(self, X):
+    def transform(self, X: Union[np.ndarray, jnp.ndarray]) -> jnp.ndarray:
         """
-        Transform the input data using the fitted PixelHop model.
+        Apply the fitted PixelHop transformation to input data.
 
-        Parameters
-        ----------
-        X : np.ndarray
-            Input data.
+        Args:
+            X (np.ndarray | jnp.ndarray): Input data of shape (N, H, W, C).
 
-        Returns
-        -------
-        jnp.ndarray
-            Transformed data.
+        Returns:
+            jnp.ndarray: Transformed output.
         """
         for layer in self.layers:
             X = layer.transform(X)
         return X
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
-        Return a string representation of the PixelHop instance.
+        Return a string representation of the PixelHop model.
         """
-        main_str = self.__class__.__name__ + "(\n"
+        desc = f"{self.__class__.__name__}(\n"
         for i, layer in enumerate(self.layers):
-            main_str += f"  (saab_{i}): {layer}\n"
-        main_str += ")"
-        return main_str
+            desc += f"  (saab_{i}): {layer}\n"
+        return desc + ")"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
-        Return a detailed string representation of the PixelHop instance.
+        Return a detailed representation of the PixelHop model.
         """
         return self.__str__()
