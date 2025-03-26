@@ -64,31 +64,47 @@ def _extract_patches(input_tensor, pool, pad, win, stride, out_h, out_w):
 @jax.jit
 def _compute_patch_statistics(patches):
     local_mean = jnp.mean(patches, axis=-1, keepdims=True)
+    dc_mean = jnp.mean(local_mean)
+    dc_var = jnp.var(local_mean)
+
     centered = patches - local_mean
     max_norm = jnp.max(jnp.linalg.norm(centered, axis=-1))
     mean_centered = jnp.mean(centered, axis=0, keepdims=True)
-    return local_mean, max_norm, mean_centered
+    return dc_mean, dc_var, max_norm, mean_centered
 
 
 def _aggregate_statistics(input_batch, patch_extractor, num_channels, num_kernels):
-    local_means = []
+    batch_dc_means = []
+    batch_dc_vars = []
     global_mean = jnp.zeros((num_channels, 1, num_kernels))
     global_bias = jnp.zeros(num_channels)
 
+    _compute_patch_statistics_batch = jax.jit(jax.vmap(_compute_patch_statistics))
     for sample in input_batch:
         patches = patch_extractor(sample)
-        local_mean, max_norm, mean_centered = jax.vmap(_compute_patch_statistics)(
+        dc_mean, dc_var, max_norm, mean_centered = _compute_patch_statistics_batch(
             patches
         )
         global_mean += mean_centered
         global_bias = jnp.maximum(global_bias, max_norm)
-        local_means.append(local_mean)
 
-    return global_mean / len(input_batch), global_bias, local_means
+        batch_dc_means.append(dc_mean)
+        batch_dc_vars.append(dc_var)
+
+    batch_dc_means = jnp.asarray(batch_dc_means)
+    batch_dc_vars = jnp.asarray(batch_dc_vars)
+
+    global_dc_mean = jnp.mean(batch_dc_means, axis=0)
+    global_dc_var = jnp.mean(
+        (batch_dc_vars + (batch_dc_means - global_dc_mean) ** 2), axis=0
+    )
+    return global_mean / len(input_batch), global_bias, global_dc_var
 
 
 @jax.jit
-def _compute_covariance_matrix(patches, local_mean, global_mean):
+def _compute_covariance_matrix(patches, global_mean):
+    print(f"Compiling _compute_covariance_matrix({patches.shape}, {global_mean.shape})")
+    local_mean = jnp.mean(patches, axis=-1, keepdims=True)
     centered = patches - local_mean - global_mean
     return jnp.einsum(
         "...i,...j->ij", centered, centered, precision=jax.lax.Precision.HIGHEST
@@ -96,19 +112,18 @@ def _compute_covariance_matrix(patches, local_mean, global_mean):
 
 
 def _aggregate_covariance(
-    input_batch, local_means, global_mean, patch_extractor, num_channels, num_kernels
+    input_batch, global_mean, patch_extractor, num_channels, num_kernels
 ):
+    _compute_covariance_matrix_batch = jax.jit(jax.vmap(_compute_covariance_matrix))
     covariance_matrix = jnp.zeros((num_channels, num_kernels, num_kernels))
-    for sample, mean in zip(input_batch, local_means):
+    for sample in input_batch:
         patches = patch_extractor(sample)
-        covariance_matrix += jax.vmap(_compute_covariance_matrix)(
-            patches, mean, global_mean
-        )
+        covariance_matrix += _compute_covariance_matrix_batch(patches, global_mean)
     return covariance_matrix
 
 
 @jax.jit
-def _compute_kernels_and_energy(covariance, local_means, previous_energy, threshold):
+def _compute_kernels_and_energy(covariance, global_dc_var, previous_energy, threshold):
     eigenvectors, eigenvalues = _compute_pca(covariance)
     num_kernels = covariance.shape[0]
 
@@ -116,8 +131,7 @@ def _compute_kernels_and_energy(covariance, local_means, previous_energy, thresh
         (jnp.ones((1, num_kernels)) / jnp.sqrt(num_kernels), eigenvectors[:-1]), axis=0
     ).T
 
-    mean_concat = jnp.concatenate(local_means)
-    leading_ev = jnp.var(mean_concat * jnp.sqrt(num_kernels))
+    leading_ev = global_dc_var * num_kernels
     energy_values = jnp.concatenate(
         [jnp.array([leading_ev]), eigenvalues[:-1]]
     ) / jnp.sum(eigenvalues)
@@ -131,13 +145,12 @@ def _fit_saab(input_batch, previous_energy, patch_extractor, threshold):
     batch_size, height, width, _ = input_batch[0].shape
     num_channels, _, num_kernels = patch_extractor(input_batch[0][0:1]).shape
 
-    global_mean, global_bias, local_means = _aggregate_statistics(
+    global_mean, global_bias, global_dc_var = _aggregate_statistics(
         input_batch, patch_extractor, num_channels, num_kernels
     )
 
     covariance = _aggregate_covariance(
         input_batch,
-        local_means,
         global_mean,
         patch_extractor,
         num_channels,
@@ -146,8 +159,9 @@ def _fit_saab(input_batch, previous_energy, patch_extractor, threshold):
     covariance /= batch_size * num_batches * height * width - 1
 
     threshold_array = jnp.ones((num_channels,)) * threshold
-    kernels, energy_values, cutoff_indices = jax.vmap(_compute_kernels_and_energy)(
-        covariance, local_means, previous_energy, threshold_array
+    _compute_kernels_and_energy_batch = jax.jit(jax.vmap(_compute_kernels_and_energy))
+    kernels, energy_values, cutoff_indices = _compute_kernels_and_energy_batch(
+        covariance, global_dc_var, previous_energy, threshold_array
     )
 
     return global_mean, global_bias, kernels, energy_values, cutoff_indices

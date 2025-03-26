@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from typing import List, Callable, Union
+from .Layers import SaabLayer
 
 
 def make_transform_fn(layers_subset: List[Callable]) -> Callable:
@@ -54,6 +55,7 @@ class PixelHop:
 
         # Initial no-op transformation
         for i, layer in enumerate(self.layers):
+            print(f"Start fitting {layer}")
             transform_fn = make_transform_fn(self.layers[:i])
             previous_energy, height, width = layer.fit(
                 X_batches, previous_energy, height, width, transform_fn
@@ -72,6 +74,32 @@ class PixelHop:
         for layer in self.layers:
             X = layer.transform(X)
         return X
+
+    def save(self, path: str) -> None:
+        """
+        Save this PixelHop instance to a file.
+
+        Args:
+            path (str): Path to save the model.
+        """
+        layers_data = [layer.to_dict() for layer in self.layers]
+        np.savez_compressed(path, layers=layers_data)
+
+    @classmethod
+    def load(cls, path: str) -> "PixelHop":
+        """
+        Load a PixelHop instance from a file.
+
+        Args:
+            path (str): Path to the saved model.
+
+        Returns:
+            PixelHop: Loaded model.
+        """
+        data = np.load(path, allow_pickle=True)
+        layers_data = data["layers"].tolist()
+        layers = [SaabLayer.from_dict(ld) for ld in layers_data]
+        return cls(layers=layers)
 
     def __str__(self) -> str:
         """

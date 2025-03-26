@@ -6,58 +6,73 @@ if __name__ == "__main__":
     from pixelhop.PixelHop import PixelHop
     from pixelhop.Layers import SaabLayer
 
-    jnp.linalg.eigh(np.random.randn(147, 147))
+    # jax.config.update("jax_explain_cache_misses", True)
 
+    # Warm up JAX linear algebra JIT cache
+    _ = jnp.linalg.eigh(np.random.randn(32, 32))
+
+    # Define PixelHop model
     pixelhop = PixelHop(
-        layers=[
-            SaabLayer(
-                pool=1,
-                win=7,
-                stride=1,
-                pad=3,
-                threshold=0.0017,
-                channel_wise=False,
-                apply_bias=False,
-            ),
-            SaabLayer(
-                pool=2,
-                win=3,
-                stride=1,
-                pad=1,
-                threshold=0.001,
-                channel_wise=True,
-                apply_bias=False,
-            ),
-            SaabLayer(
-                pool=2,
-                win=3,
-                stride=1,
-                pad=1,
-                threshold=0.001,
-                channel_wise=True,
-                apply_bias=False,
-            ),
+        [
+            SaabLayer(1, 7, 1, 3, threshold=0.00685),
+            SaabLayer(2, 3, 1, 1, threshold=0.0035, channel_wise=True),
+            SaabLayer(2, 3, 1, 1, threshold=0.0015, channel_wise=True),
         ]
     )
-    print(pixelhop)
 
-    # jax.profiler.start_trace("./jax-trace")
-    sample = np.random.randn(800, 128, 128, 12)
+    print("\n[Model Configuration]\n", pixelhop)
 
-    print("Start training...")
-    start = time.time()
-    pixelhop.fit(sample, batch_size=10)
-    print(time.time() - start)
+    # Start profiler (optional)
+    jax.profiler.start_trace("./jax-trace")
 
-    batch_size = 40
-    print(pixelhop.transform(np.random.randn(batch_size, 128, 128, 12)))
+    # Simulated training data
+    train_data = np.random.randn(2000, 512, 512, 3).astype(np.float32)
 
-    X = np.random.randn(800, 128, 128, 12)
-    print("Start transform...")
-    start = time.time()
+    # ------------------------
+    # Training
+    # ------------------------
+    print("\n[Training] Fitting model...")
+    start_time = time.time()
+    pixelhop.fit(train_data, batch_size=20)
+    print(f"[Training] Completed in {time.time() - start_time:.2f} seconds.")
+
+    # ------------------------
+    # Save the trained model
+    # ------------------------
+    save_path = "models/pixelhop_trained.npz"
+    pixelhop.save(save_path)
+    print(f"[Checkpoint] Model saved to {save_path}")
+
+    # ------------------------
+    # Load the model from disk
+    # ------------------------
+    loaded_pixelhop = PixelHop.load(save_path)
+    print("[Checkpoint] Model successfully loaded from disk.")
+
+    # ------------------------
+    # Inference on one batch
+    # ------------------------
+    test_sample = np.random.randn(20, 512, 512, 3).astype(np.float32)
+    output = loaded_pixelhop.transform(test_sample)
+    output.block_until_ready()
+    print(f"[Inference] Output shape: {output.shape}")
+
+    # ------------------------
+    # Full batch inference
+    # ------------------------
+    print("\n[Inference] Starting full transform on new data...")
+    X = np.random.randn(2000, 512, 512, 3).astype(np.float32)
+    batch_size = 20
     num_batches = max(X.shape[0] // batch_size, 1)
-    Xt = [pixelhop.transform(X_batch) for X_batch in np.array_split(X, num_batches)]
-    print(Xt)
-    print(Xt[0].shape)
-    print(time.time() - start)
-    # jax.profiler.stop_trace()
+
+    start_time = time.time()
+    Xt = [
+        loaded_pixelhop.transform(X_batch) for X_batch in np.array_split(X, num_batches)
+    ]
+    Xt[0].block_until_ready()
+    total_time = time.time() - start_time
+
+    print(f"[Inference] Completed {len(Xt)} batches in {total_time:.2f} seconds.")
+    print(f"[Output Example] First batch shape: {Xt[0].shape}")
+    print("[Profiler] Stopping JAX trace...")
+    jax.profiler.stop_trace()

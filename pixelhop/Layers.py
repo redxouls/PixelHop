@@ -1,3 +1,4 @@
+import numpy as np
 import jax.numpy as jnp
 from typing import Optional, List, Callable, Tuple
 from .Saab import Saab
@@ -68,6 +69,38 @@ class SaabLayer(Saab):
             jnp.ndarray: Transformed output.
         """
         return super().transform(X)
+
+    def to_dict(self) -> dict:
+        return {
+            "config": {
+                "pool": self.pool,
+                "win": self.win,
+                "stride": self.stride,
+                "pad": self.pad,
+                "threshold": float(self.threshold),
+                "channel_wise": self.channel_wise,
+                "apply_bias": self.apply_bias,
+            },
+            "mean": [np.asarray(m) for m in self.mean],
+            "bias": [np.asarray(b) for b in self.bias],
+            "kernels": [np.asarray(k) for k in self.kernels],
+            "energy": np.asarray(self.energy),
+            "cutoff_index": np.asarray(self.cutoff_index),
+            "out_h": self.out_h,
+            "out_w": self.out_w,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SaabLayer":
+        layer = cls(**data["config"])
+        layer.mean = tuple(jnp.asarray(arr) for arr in data["mean"])
+        layer.bias = tuple(jnp.asarray(arr) for arr in data["bias"])
+        layer.kernels = tuple(jnp.asarray(arr) for arr in data["kernels"])
+        layer.energy = jnp.asarray(data["energy"])
+        layer.cutoff_index = jnp.asarray(data["cutoff_index"])
+        layer.out_h = int(data["out_h"])
+        layer.out_w = int(data["out_w"])
+        return layer
 
     def __str__(self) -> str:
         return (
