@@ -1,16 +1,12 @@
+import numpy as np
 import jax.numpy as jnp
-from einops import rearrange
-from typing import Optional, List, Tuple
+from typing import Optional, List, Callable, Tuple
 from .Saab import Saab
 
 
 class SaabLayer(Saab):
     """
-    SaabLayer applies the Saab transformation to input data.
-
-    This layer extends the standard Saab transformation and supports:
-    - Channel-wise transformations.
-    - Optional bias application.
+    Wrapper around the Saab feature extractor for modular layer-based usage.
     """
 
     def __init__(
@@ -24,140 +20,87 @@ class SaabLayer(Saab):
         apply_bias: bool = False,
     ):
         """
-        Initializes a SaabLayer.
+        Initialize a SaabLayer with pooling and patch parameters.
 
-        Parameters
-        ----------
-        pool : int
-            Pooling size.
-        win : int
-            Window size for feature extraction.
-        stride : int
-            Stride for moving window.
-        pad : int
-            Padding size for input.
-        threshold : float, optional (default=0.001)
-            Threshold for energy pruning.
-        channel_wise : bool, optional (default=False)
-            If True, applies transformation independently per channel.
-        apply_bias : bool, optional (default=False)
-            If True, applies bias during transformation.
+        Args:
+            pool (int): Pooling size.
+            win (int): Patch window size.
+            stride (int): Stride for patch extraction.
+            pad (int): Padding for input feature maps.
+            threshold (float): Energy threshold for kernel selection.
+            channel_wise (bool): Whether to process each channel independently.
+            apply_bias (bool): Whether to apply bias in transform.
         """
-        super().__init__(pool, win, stride, pad, threshold, apply_bias)
-        self.channel_wise = channel_wise
-
-    def resize_energy(
-        self, energy_previous: Optional[jnp.ndarray], num_channels: int
-    ) -> jnp.ndarray:
-        """
-        Resizes the energy array to match the channel-wise setting.
-
-        Parameters
-        ----------
-        energy_previous : jnp.ndarray or None
-            Energy values from the previous layer.
-        num_channels : int
-            Number of channels in the input.
-
-        Returns
-        -------
-        jnp.ndarray
-            Reshaped energy array.
-        """
-        if self.channel_wise:
-            if energy_previous is None:
-                energy_previous = jnp.ones(num_channels)
-            return rearrange(energy_previous, "c -> c 1")
-        else:
-            return jnp.ones((1, 1))
-
-    def resize_input(self, X: jnp.ndarray) -> jnp.ndarray:
-        """
-        Reshapes a single input tensor for Saab transformation.
-
-        Parameters
-        ----------
-        X : jnp.ndarray
-            Input tensor of shape (N, H, W, C).
-
-        Returns
-        -------
-        jnp.ndarray
-            Reshaped input tensor.
-        """
-        if self.channel_wise:
-            return rearrange(X, "n h w c -> c n h w 1")
-        else:
-            return rearrange(X, "n h w c -> 1 n h w c")
+        super().__init__(pool, win, stride, pad, threshold, channel_wise, apply_bias)
 
     def fit(
-        self, X_batch: List[jnp.ndarray], energy_previous: Optional[jnp.ndarray]
-    ) -> jnp.ndarray:
+        self,
+        input_batch: List[jnp.ndarray],
+        previous_energy: Optional[jnp.ndarray],
+        input_height: int,
+        input_width: int,
+        previous_transform: Callable[[jnp.ndarray], jnp.ndarray],
+    ) -> Tuple[jnp.ndarray, int, int]:
         """
-        Fits the SaabLayer to the input batch.
+        Fit the SaabLayer to input data.
 
-        Parameters
-        ----------
-        X_batch : List[jnp.ndarray]
-            List of input batches.
-        energy_previous : jnp.ndarray or None
-            Energy values from the previous layer.
+        Args:
+            input_batch (List[jnp.ndarray]): List of input feature maps.
+            previous_energy (Optional[jnp.ndarray]): Energy vector from previous layer.
+            input_height (int): Height of input feature maps.
+            input_width (int): Width of input feature maps.
+            previous_transform (Callable): Transformation function for previous layer.
 
-        Returns
-        -------
-        jnp.ndarray
-            Updated energy values.
+        Returns:
+            Tuple[jnp.ndarray, int, int]: Energy vector and output feature map shape (H, W).
         """
-        num_channels = X_batch[0].shape[-1]
-
-        X_batch = [self.resize_input(X) for X in X_batch]
-        if self.channel_wise:
-            X_batch = list(map(list, zip(*X_batch)))
-
-        energy_previous = self.resize_energy(energy_previous, num_channels)
-
-        return super().fit(X_batch, energy_previous)
+        return super().fit(
+            input_batch, previous_energy, input_height, input_width, previous_transform
+        )
 
     def transform(self, X: jnp.ndarray) -> jnp.ndarray:
         """
-        Applies the Saab transformation to the input.
+        Apply the Saab transform to input data.
 
-        Parameters
-        ----------
-        X : jnp.ndarray
-            Input tensor of shape (N, H, W, C).
+        Args:
+            X (jnp.ndarray): Input data tensor.
 
-        Returns
-        -------
-        jnp.ndarray
-            Transformed output tensor.
+        Returns:
+            jnp.ndarray: Transformed output.
         """
-        N, H, W, _ = X.shape
-        X = self.resize_input(X)
-        X = super().transform(X)
-        return X
+        return super().transform(X)
 
-    def fit_transform(
-        self, X_batch: List[jnp.ndarray], energy_previous: Optional[jnp.ndarray]
-    ) -> Tuple[List[jnp.ndarray], jnp.ndarray]:
-        """
-        Fits the SaabLayer and transforms the input batch.
+    def to_dict(self) -> dict:
+        return {
+            "config": {
+                "pool": self.pool,
+                "win": self.win,
+                "stride": self.stride,
+                "pad": self.pad,
+                "threshold": float(self.threshold),
+                "channel_wise": self.channel_wise,
+                "apply_bias": self.apply_bias,
+            },
+            "mean": [np.asarray(m) for m in self.mean],
+            "bias": [np.asarray(b) for b in self.bias],
+            "kernels": [np.asarray(k) for k in self.kernels],
+            "energy": np.asarray(self.energy),
+            "cutoff_index": np.asarray(self.cutoff_index),
+            "out_h": self.out_h,
+            "out_w": self.out_w,
+        }
 
-        Parameters
-        ----------
-        X_batch : List[jnp.ndarray]
-            List of input batches.
-        energy_previous : jnp.ndarray or None
-            Energy values from the previous layer.
-
-        Returns
-        -------
-        Tuple[List[jnp.ndarray], jnp.ndarray]
-            Transformed input batch and updated energy values.
-        """
-        energy_previous = self.fit(X_batch, energy_previous)
-        X_batch = [self.transform(X) for X in X_batch]
-        return X_batch, energy_previous
+    @classmethod
+    def from_dict(cls, data: dict) -> "SaabLayer":
+        layer = cls(**data["config"])
+        layer.mean = tuple(jnp.asarray(arr) for arr in data["mean"])
+        layer.bias = tuple(jnp.asarray(arr) for arr in data["bias"])
+        layer.kernels = tuple(jnp.asarray(arr) for arr in data["kernels"])
+        layer.energy = jnp.asarray(data["energy"])
+        layer.cutoff_index = jnp.asarray(data["cutoff_index"])
+        layer.out_h = int(data["out_h"])
+        layer.out_w = int(data["out_w"])
+        return layer
 
     def __str__(self) -> str:
         return (
@@ -168,8 +111,7 @@ class SaabLayer(Saab):
             f"pad={self.pad}, "
             f"threshold={self.threshold}, "
             f"channel_wise={self.channel_wise}, "
-            f"apply_bias={self.apply_bias}"
-            f")"
+            f"apply_bias={self.apply_bias})"
         )
 
     def __repr__(self) -> str:
