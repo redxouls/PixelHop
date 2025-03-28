@@ -55,7 +55,6 @@ class PixelHop:
 
         # Initial no-op transformation
         for i, layer in enumerate(self.layers):
-            print(f"Start fitting {layer}")
             transform_fn = make_transform_fn(self.layers[:i])
             previous_energy, height, width = layer.fit(
                 X_batches, previous_energy, height, width, transform_fn

@@ -39,21 +39,21 @@ if __name__ == "__main__":
     # ------------------------
     # Save the trained model
     # ------------------------
-    save_path = "models/pixelhop_trained.npz"
-    pixelhop.save(save_path)
-    print(f"[Checkpoint] Model saved to {save_path}")
+    # save_path = "models/pixelhop_trained.npz"
+    # pixelhop.save(save_path)
+    # print(f"[Checkpoint] Model saved to {save_path}")
 
     # ------------------------
     # Load the model from disk
     # ------------------------
-    loaded_pixelhop = PixelHop.load(save_path)
-    print("[Checkpoint] Model successfully loaded from disk.")
+    # loaded_pixelhop = PixelHop.load(save_path)
+    # print("[Checkpoint] Model successfully loaded from disk.")
 
     # ------------------------
     # Inference on one batch
     # ------------------------
     test_sample = np.random.randn(20, 512, 512, 3).astype(np.float32)
-    output = loaded_pixelhop.transform(test_sample)
+    output = pixelhop.transform(test_sample)
     output.block_until_ready()
     print(f"[Inference] Output shape: {output.shape}")
 

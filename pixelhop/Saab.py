@@ -103,7 +103,6 @@ def _aggregate_statistics(input_batch, patch_extractor, num_channels, num_kernel
 
 @jax.jit
 def _compute_covariance_matrix(patches, global_mean):
-    print(f"Compiling _compute_covariance_matrix({patches.shape}, {global_mean.shape})")
     local_mean = jnp.mean(patches, axis=-1, keepdims=True)
     centered = patches - local_mean - global_mean
     return jnp.einsum(
