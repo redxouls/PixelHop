@@ -158,6 +158,8 @@ def _fit_saab(input_batch, previous_energy, patch_extractor, threshold):
     covariance /= batch_size * num_batches * height * width - 1
 
     threshold_array = jnp.ones((num_channels,)) * threshold
+    if previous_energy is None:
+        previous_energy = jnp.ones((num_channels,))
     _compute_kernels_and_energy_batch = jax.jit(jax.vmap(_compute_kernels_and_energy))
     kernels, energy_values, cutoff_indices = _compute_kernels_and_energy_batch(
         covariance, global_dc_var, previous_energy, threshold_array

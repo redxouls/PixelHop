@@ -51,9 +51,7 @@ class PixelHop:
         num_batches = max(num_samples // batch_size, 1)
         X_batches = np.array_split(X[: num_batches * batch_size], num_batches)
 
-        previous_energy = jnp.ones(1)
-
-        # Initial no-op transformation
+        previous_energy = None
         for i, layer in enumerate(self.layers):
             transform_fn = make_transform_fn(self.layers[:i])
             previous_energy, height, width = layer.fit(

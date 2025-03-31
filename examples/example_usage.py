@@ -66,9 +66,7 @@ if __name__ == "__main__":
     num_batches = max(X.shape[0] // batch_size, 1)
 
     start_time = time.time()
-    Xt = [
-        loaded_pixelhop.transform(X_batch) for X_batch in np.array_split(X, num_batches)
-    ]
+    Xt = [pixelhop.transform(X_batch) for X_batch in np.array_split(X, num_batches)]
     Xt[0].block_until_ready()
     total_time = time.time() - start_time
 
